@@ -1,5 +1,6 @@
-import React, { useId, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronUp, Plus } from 'lucide-react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { ChevronUp, Plus, X } from 'lucide-react';
+import { FdiTeethPicker } from './FdiTeethPicker';
 import type { DentalOrder } from '../types/dental';
 import { extractWarrantyYears } from '../utils/csvParser';
 import { parseTeethNotation } from '../utils/fdiTeeth';
@@ -46,10 +47,13 @@ const warranties = ['1 năm', '2 năm', '3 năm', '5 năm', '7 năm', '10 năm',
 export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, materials, onAdd }: QuickOrderEntryProps) {
   const panelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const teethInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [formFocused, setFormFocused] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [layout, setLayout] = useState<ColumnLayout | null>(null);
   const entryScrollRef = useRef<HTMLDivElement>(null);
   const [values, setValues] = useState<QuickOrderValues>(() => ({
@@ -62,7 +66,19 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
   const [notice, setNotice] = useState('');
   const saving = useRef(false);
   const codeInput = useRef<HTMLInputElement>(null);
-  const expanded = hovered || pinned || formFocused || busy;
+  const expanded = hovered || pinned || formFocused || pickerOpen || busy;
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (pickerRef.current?.contains(target) || teethInputRef.current?.contains(target)) return;
+      setPickerOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [pickerOpen]);
 
   function collapse() {
     if (busy) return;
@@ -70,6 +86,7 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
     setHovered(false);
     setPinned(false);
     setFormFocused(false);
+    setPickerOpen(false);
     if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
   }
 
@@ -188,6 +205,7 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
         notes: values.notes.trim(),
       });
       setValues((current) => ({ ...current, warrantyCode: '', patientName: '', teeth: '', teethCount: '1', totalAmount: '', notes: '' }));
+      setPickerOpen(false);
       setNotice(`Đã thêm ${created.warrantyCode} — ${created.patientName}.`);
       setFormFocused(true);
       requestAnimationFrame(() => codeInput.current?.focus());
@@ -209,9 +227,30 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !(event.target instanceof HTMLSelectElement)) {
           event.preventDefault();
-          collapse();
+          if (pickerOpen) setPickerOpen(false);
+          else collapse();
         }
       }}>
+      {pickerOpen && (
+        <div ref={pickerRef} role="group" aria-label="Chọn vị trí răng FDI" className="absolute left-1/2 z-10 w-[min(96vw,80rem)] -translate-x-1/2 rounded-t-2xl border border-slate-200 bg-white p-3 shadow-[0_-12px_32px_rgba(15,23,42,0.20)] dark:border-slate-700 dark:bg-slate-900 sm:p-4"
+          style={{ bottom: 'calc(100% - 44px)' }}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-slate-800 dark:text-white">Chọn vị trí răng</span>
+            <button type="button" onClick={() => setPickerOpen(false)} aria-label="Đóng sơ đồ răng"
+              className="flex size-11 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-slate-200 dark:hover:bg-slate-800">
+              <X aria-hidden="true" className="size-5" />
+            </button>
+          </div>
+          <div className="max-h-[min(65vh,32rem)] overflow-y-auto">
+            <FdiTeethPicker selectedIds={parseTeethNotation(values.teeth).toothIds}
+              onChange={(ids, formatted) => {
+                setValues((current) => ({ ...current, teeth: ids.length ? formatted : '', teethCount: String(ids.length || 1) }));
+                setError('');
+                setNotice('');
+              }} />
+          </div>
+        </div>
+      )}
       <div aria-hidden={expanded} inert={expanded} className={`flex h-11 items-end justify-center ${expanded ? 'invisible' : ''}`}>
         <button ref={triggerRef} type="button" aria-expanded={expanded} aria-controls={panelId}
           aria-label={expanded ? 'Thu gọn nhập nhanh' : 'Thêm nhanh đơn hàng'} disabled={busy}
@@ -228,7 +267,10 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
       <div ref={panelRef} id={panelId} inert={!expanded} aria-hidden={!expanded}
         className="quick-order-panel border-t border-slate-200 bg-white/95 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.10)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/95"
         style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
-        onFocusCapture={() => setFormFocused(true)}
+        onFocusCapture={(event) => {
+          setFormFocused(true);
+          if (event.target !== teethInputRef.current) setPickerOpen(false);
+        }}
         onBlurCapture={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setFormFocused(false);
         }}>
@@ -271,7 +313,9 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
                             </select>
                           ) : (
                             <input aria-label={`Nhập nhanh ${label}`} value={values[field]}
-                              ref={field === 'warrantyCode' ? codeInput : undefined}
+                              ref={field === 'warrantyCode' ? codeInput : field === 'teeth' ? teethInputRef : undefined}
+                              onFocus={field === 'teeth' ? () => setPickerOpen(true) : undefined}
+                              onClick={field === 'teeth' ? () => setPickerOpen(true) : undefined}
                               onChange={(event) => update(field, event.target.value)}
                               required={field === 'patientName' || field === 'orderDate' || field === 'teethCount'}
                               maxLength={field === 'warrantyCode' ? 64 : field === 'notes' ? 1000 : field === 'patientName' || field === 'teeth' ? 200 : undefined}
