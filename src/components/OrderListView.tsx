@@ -1,3 +1,4 @@
+import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo, useRef } from 'react';
 import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
 import { DentalOrder, MaterialPriceConfig, ClinicPartner } from '../types/dental';
@@ -412,11 +413,11 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   return (
     <div className="space-y-4 pb-16">
       {/* Compact Spatial Top Bar: Month Select and New Order Action */}
-      <div className="bento-card px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+      <div className="bento-card month-toolbar sm:px-4 sm:py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          <div className="hidden sm:block relative">
             <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-sky-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
+            <MonthFilter
               value={selectedMonth}
               onChange={(e) => {
                 setSelectedMonth(e.target.value);
@@ -435,7 +436,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                 </option>
               ))}
               <option value="ALL">Tất cả các tháng (Toàn kỳ)</option>
-            </select>
+            </MonthFilter>
           </div>
         </div>
 
@@ -490,7 +491,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       </div>
 
       {/* 4 Deep Dark-Jewel KPI Cards for Orders */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="dashboard-kpis grid min-w-0 grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="p-4 sm:p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
           <div className="relative">
@@ -502,7 +503,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
               <span className="text-xs font-bold text-sky-300 uppercase">Ca</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
             <ShieldCheck className="w-5 h-5" />
           </div>
         </div>
@@ -518,7 +519,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
               <span className="text-xs font-bold text-teal-300 uppercase">Răng</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
             <Activity className="w-5 h-5" />
           </div>
         </div>
@@ -536,7 +537,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
               <span className="text-xs font-bold text-amber-300 uppercase">Sứ</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
             <Layers className="w-5 h-5" />
           </div>
         </div>
@@ -551,7 +552,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
               {formatVND(orderSummary.totalRevenue)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 flex items-center justify-center shrink-0 relative">
             <DollarSign className="w-5 h-5" />
           </div>
         </div>

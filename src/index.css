@@ -157,6 +157,57 @@
   }
 }
 
+@media (width < 40rem) {
+  .bento-card.month-toolbar,
+  .bento-card.month-toolbar:hover {
+    background: none;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+
+  .dashboard-kpis > div {
+    min-width: 0;
+    padding: 12px;
+    border-radius: 14px;
+    box-shadow: 0 4px 12px rgb(15 23 42 / 18%);
+  }
+  .dashboard-kpis > div > .relative {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .dashboard-kpis .dashboard-kpi-icon {
+    display: none;
+  }
+  .dashboard-kpis .uppercase {
+    font-size: 10px;
+    letter-spacing: 0.01em;
+  }
+  .dashboard-kpis .font-display {
+    font-size: clamp(1rem, 4.4vw, 1.25rem);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .dashboard-kpi-footer {
+    margin-top: 12px;
+    padding-top: 8px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .dashboard-kpi-footer > div {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .dashboard-kpi-footer button {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+  }
+}
+
 @media print {
   body {
     background: white !important;

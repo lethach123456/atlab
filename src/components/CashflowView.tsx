@@ -1,3 +1,4 @@
+import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo } from 'react';
 import { CashflowTransaction } from '../types/dental';
 import { formatVND, extractMonthYear } from '../utils/financeUtils';
@@ -142,12 +143,12 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Compact Single-Row Filter & Action Bar */}
-      <div className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
+      <div className="sm:bg-white sm:dark:bg-slate-900 sm:p-3.5 sm:rounded-xl sm:border sm:border-slate-200/80 sm:dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          <select
+          <MonthFilter
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-1.5 text-xs font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white cursor-pointer"
+            className="hidden sm:block px-3 py-1.5 text-xs font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white cursor-pointer"
           >
             <option value="ALL">Tất cả tháng</option>
             {availableMonths.map((m) => (
@@ -155,7 +156,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 Tháng {m}
               </option>
             ))}
-          </select>
+          </MonthFilter>
 
           <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
             <button
@@ -239,7 +240,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       </div>
 
       {/* Deep Dark-Jewel Summary Strip */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="dashboard-kpis grid min-w-0 grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-4">
         <div className="p-4 sm:p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 text-white border border-teal-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-teal-500/15 blur-2xl pointer-events-none" />
           <div className="relative">
@@ -250,7 +251,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               +{formatVND(periodSummary.totalIncome)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
             <ArrowUpRight className="w-5 h-5" />
           </div>
         </div>
@@ -265,12 +266,12 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               -{formatVND(periodSummary.totalExpense)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
             <ArrowDownRight className="w-5 h-5" />
           </div>
         </div>
 
-        <div className="p-4 sm:p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+        <div className="max-sm:col-span-2 p-4 sm:p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
           <div className="relative">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300/85 block">
@@ -280,7 +281,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               {formatVND(periodSummary.netProfit)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
             <Wallet className="w-5 h-5" />
           </div>
         </div>

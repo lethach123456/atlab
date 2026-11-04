@@ -1,3 +1,4 @@
+import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo } from 'react';
 import type { DentalOrder } from '../types/dental';
 import type { UserProfile } from '../types/user';
@@ -32,6 +33,7 @@ import {
   Table2,
   FileSpreadsheet,
   Columns2,
+  Columns3,
   Maximize2,
 } from 'lucide-react';
 
@@ -123,9 +125,9 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'unpaid' | 'paid'>('all');
 
   // View mode: 'summary' (Bảng tổng hợp) or 'individual' (Bảng riêng từng người)
-  const [viewMode, setViewMode] = useState<'summary' | 'individual'>('summary');
+  const [viewMode, setViewMode] = useState<'summary' | 'individual'>('individual');
   const [focusedEmployeeId, setFocusedEmployeeId] = useState<string>('ALL');
-  const [individualColumns, setIndividualColumns] = useState<1 | 2>(2);
+  const [individualColumns, setIndividualColumns] = useState<1 | 2 | 3>(3);
 
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingRecord, setEditingRecord] = useState<EmployeePayroll | null>(null);
@@ -798,11 +800,11 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Top Command & Filter Bar */}
-      <div className="bento-card p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+      <div className="bento-card month-toolbar sm:p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative">
+          <div className="hidden sm:block relative">
             <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-sky-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
+            <MonthFilter
               value={selectedMonth}
               onChange={(e) => {
                 setSelectedMonth(e.target.value);
@@ -821,7 +823,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                 </option>
               ))}
               <option value="ALL">Tất cả các kỳ</option>
-            </select>
+            </MonthFilter>
           </div>
 
           {/* Layout / View Mode Switcher: Bảng tổng hợp vs Bảng từng người */}
@@ -829,6 +831,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('summary')}
+              aria-pressed={viewMode === 'summary'}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
                 viewMode === 'summary'
                   ? 'bg-slate-900 dark:bg-sky-500 text-white dark:text-slate-950 shadow-2xs'
@@ -841,6 +844,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('individual')}
+              aria-pressed={viewMode === 'individual'}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
                 viewMode === 'individual'
                   ? 'bg-slate-900 dark:bg-sky-500 text-white dark:text-slate-950 shadow-2xs'
@@ -852,7 +856,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/80 rounded-xl border border-slate-200/60 dark:border-slate-800">
+          <div className="hidden items-center sm:flex gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/80 rounded-xl border border-slate-200/60 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setSourceFilter('all')}
@@ -888,7 +892,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/80 rounded-xl border border-slate-200/60 dark:border-slate-800">
+          <div className="hidden items-center sm:flex gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/80 rounded-xl border border-slate-200/60 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
@@ -924,7 +928,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
             </button>
           </div>
 
-          <div className="relative flex-1 min-w-[160px] max-w-xs">
+          <div className="relative hidden min-w-[160px] max-w-xs flex-1 sm:block">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -991,7 +995,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
       )}
 
       {/* 4 Deep Dark-Jewel KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="dashboard-kpis grid min-w-0 grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
           <div className="relative">
@@ -1005,7 +1009,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
               {filteredRecords.length} nhân sự · Kỳ {selectedMonth}
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
             <DollarSign className="w-5 h-5" />
           </div>
         </div>
@@ -1023,7 +1027,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
               Khấu trừ kỳ này: -{formatVND(summary.totalDeduction)}
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
             <Wallet className="w-5 h-5" />
           </div>
         </div>
@@ -1041,7 +1045,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
               Tuỳ chỉnh theo kỳ {selectedMonth}
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
             <Award className="w-5 h-5" />
           </div>
         </div>
@@ -1060,7 +1064,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
               Còn nợ lương: {formatVND(summary.unpaidAmount)}
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 flex items-center justify-center shrink-0 relative">
             <CheckCircle2 className="w-5 h-5" />
           </div>
         </div>
@@ -1383,10 +1387,11 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
             </div>
 
             {displayedIndividualRecords.length > 1 && (
-              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200/70 dark:border-slate-800">
+              <div className="hidden items-center xl:flex gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200/70 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIndividualColumns(1)}
+                  aria-pressed={individualColumns === 1}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
                     individualColumns === 1
                       ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold shadow-2xs'
@@ -1400,6 +1405,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIndividualColumns(2)}
+                  aria-pressed={individualColumns === 2}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
                     individualColumns === 2
                       ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold shadow-2xs'
@@ -1409,6 +1415,20 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                 >
                   <Columns2 className="w-3 h-3" />
                   <span>2 Cột</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIndividualColumns(3)}
+                  aria-pressed={individualColumns === 3}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    individualColumns === 3
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold shadow-2xs'
+                      : 'text-slate-500'
+                  }`}
+                  title="Hiển thị 3 bảng song song mỗi hàng"
+                >
+                  <Columns3 aria-hidden="true" className="w-3 h-3" />
+                  <span>3 Cột</span>
                 </button>
               </div>
             )}
@@ -1423,8 +1443,10 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
           ) : (
             <div
               className={`grid grid-cols-1 ${
-                displayedIndividualRecords.length > 1 && individualColumns === 2
-                  ? 'xl:grid-cols-2'
+                displayedIndividualRecords.length > 1
+                  ? individualColumns === 3
+                    ? 'md:grid-cols-2 xl:grid-cols-3'
+                    : individualColumns === 2 ? 'xl:grid-cols-2' : ''
                   : ''
               } gap-4`}
             >
@@ -1443,21 +1465,21 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                 return (
                   <div
                     key={row.id}
-                    className="bento-card rounded-2xl overflow-hidden border border-slate-200/90 dark:border-slate-800 flex flex-col justify-between"
+                    className="bento-card min-w-0 rounded-2xl overflow-hidden border border-slate-200/90 dark:border-slate-800 flex flex-col justify-between"
                   >
                     <div>
                       {/* Employee Table Header Banner */}
                       <div className="px-4 py-3.5 bg-slate-900 dark:bg-slate-950 text-white flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
-                        <div>
+                        <div className="min-w-0 max-w-full">
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-xs text-sky-400 font-bold">
                               #{index + 1}
                             </span>
-                            <h3 className="font-display font-bold text-sm text-white">
+                            <h3 className="min-w-0 break-words font-display font-bold text-sm text-white">
                               BẢNG LƯƠNG: {row.employeeName.toUpperCase()}
                             </h3>
                           </div>
-                          <div className="text-[11px] text-slate-300 mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <div className="text-[11px] text-slate-300 mt-0.5 flex flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]">
                             <span>{row.position}</span>
                             <span aria-hidden="true">·</span>
                             <span>
@@ -1482,7 +1504,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex max-w-full flex-wrap items-center gap-1.5">
                           <button
                             type="button"
                             disabled={busy}
@@ -1604,13 +1626,13 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                                       {saleCalc.details.map((d) => (
                                         <div
                                           key={d.clinicName}
-                                          className="text-[11px] font-mono text-slate-500 dark:text-slate-400 flex items-center justify-between gap-2"
+                                          className="text-[11px] font-mono text-slate-500 dark:text-slate-400 flex flex-wrap items-start justify-between gap-x-2 gap-y-0.5"
                                         >
-                                          <span>
+                                          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                                             • {d.clinicName} ({d.ratePercent}% ×{' '}
                                             {formatVND(d.revenue)})
                                           </span>
-                                          <span className="font-semibold text-teal-700 dark:text-teal-400">
+                                          <span className="shrink-0 whitespace-nowrap font-semibold text-teal-700 dark:text-teal-400">
                                             {formatVND(d.commission)}
                                           </span>
                                         </div>
@@ -1947,7 +1969,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                     <input
                       type="number"
                       min={0}
-                      step={100000}
+                      step={1}
                       value={baseSalary}
                       onChange={(e) => setBaseSalary(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-blue-500/50 rounded-lg font-mono font-bold bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
@@ -1992,7 +2014,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                     <input
                       type="number"
                       min={0}
-                      step={50000}
+                      step={1}
                       value={allowance}
                       onChange={(e) => setAllowance(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono font-semibold bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
@@ -2019,7 +2041,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                       <input
                         type="number"
                         min={0}
-                        step={50000}
+                        step={1}
                         value={commissionAmount}
                         onChange={(e) => setCommissionAmount(Number(e.target.value))}
                         className="w-full px-3 py-2 border border-teal-500/50 rounded-lg font-mono font-bold bg-white dark:bg-slate-950 text-teal-700 dark:text-teal-400"
@@ -2034,7 +2056,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                     <input
                       type="number"
                       min={0}
-                      step={50000}
+                      step={1}
                       value={bonus}
                       onChange={(e) => setBonus(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono font-semibold bg-white dark:bg-slate-950 text-emerald-700 dark:text-emerald-400"
@@ -2048,7 +2070,7 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
                     <input
                       type="number"
                       min={0}
-                      step={50000}
+                      step={1}
                       value={deduction}
                       onChange={(e) => setDeduction(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono font-semibold bg-white dark:bg-slate-950 text-rose-600 dark:text-rose-400"

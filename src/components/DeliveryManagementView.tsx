@@ -1,3 +1,4 @@
+import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo, useRef } from 'react';
 import { DeliveryRecord, DentalOrder } from '../types/dental';
 import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financeUtils';
@@ -333,12 +334,12 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Compact Single-Row Control Bar */}
-      <div className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
+      <div className="sm:bg-white sm:dark:bg-slate-900 sm:p-3.5 sm:rounded-xl sm:border sm:border-slate-200/80 sm:dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          <select
+          <MonthFilter
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-1.5 text-xs font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white cursor-pointer"
+            className="hidden sm:block px-3 py-1.5 text-xs font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white cursor-pointer"
           >
             {deliveryMonths.map((m) => (
               <option key={m} value={m}>
@@ -346,7 +347,7 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
               </option>
             ))}
             <option value="ALL">Tất cả tháng ({deliveries.length})</option>
-          </select>
+          </MonthFilter>
 
           <select
             value={selectedClinic}
@@ -398,7 +399,7 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
       </div>
 
       {/* 4 Deep Dark-Jewel KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="dashboard-kpis grid min-w-0 grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="p-4 sm:p-5 rounded-2xl flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300/85 block relative">

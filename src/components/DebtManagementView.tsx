@@ -1,3 +1,4 @@
+import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo } from 'react';
 import { DentalOrder, DebtPaymentRecord, ClinicDebtRecord } from '../types/dental';
 import {
@@ -398,11 +399,11 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Single-Row Spatial Control Bar */}
-      <div className="bento-card p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-2.5">
+      <div className="bento-card month-toolbar sm:p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative">
+          <div className="hidden sm:block relative">
             <Calendar className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <select
+            <MonthFilter
               value={selectedMonth}
               onChange={(e) => {
                 setSelectedMonth(e.target.value);
@@ -420,7 +421,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                     : ''}
                 </option>
               ))}
-            </select>
+            </MonthFilter>
           </div>
 
           <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -485,7 +486,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
       </div>
 
       {/* 4 Deep Dark-Jewel KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="dashboard-kpis grid min-w-0 grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="p-4 sm:p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
           <div className="relative">
@@ -496,7 +497,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
               {formatVND(summaryTotals.oldDebt)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
             <CreditCard className="w-5 h-5" />
           </div>
         </div>
@@ -511,7 +512,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
               {formatVND(summaryTotals.paid)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-400/25 text-teal-300 flex items-center justify-center shrink-0 relative">
             <CheckCircle2 className="w-5 h-5" />
           </div>
         </div>
@@ -526,7 +527,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
               {formatVND(summaryTotals.remaining)}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/25 text-amber-300 flex items-center justify-center shrink-0 relative">
             <AlertCircle className="w-5 h-5" />
           </div>
         </div>
@@ -542,7 +543,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
               <span className="text-xs font-bold text-violet-300 uppercase">NK</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 flex items-center justify-center shrink-0 relative">
             <Building2 className="w-5 h-5" />
           </div>
         </div>

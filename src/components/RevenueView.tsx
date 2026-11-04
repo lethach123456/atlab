@@ -1,3 +1,4 @@
+import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo, useEffect } from 'react';
 import { DentalOrder } from '../types/dental';
 import {
@@ -200,11 +201,11 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Compact Spatial Toolbar: Month Option Select + Material Filter + Export PDF */}
-      <div className="bento-card px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+      <div className="bento-card month-toolbar sm:px-4 sm:py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          <div className="hidden sm:block relative">
             <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-sky-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
+            <MonthFilter
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="pl-8 pr-4 py-1.5 text-xs font-mono font-bold bg-white/90 dark:bg-slate-950 border border-slate-200/90 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white focus:outline-hidden cursor-pointer"
@@ -220,7 +221,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                     : ''}
                 </option>
               ))}
-            </select>
+            </MonthFilter>
           </div>
 
         </div>
@@ -241,7 +242,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
       </div>
 
       {/* Deep Dark-Jewel 3-Metric Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="dashboard-kpis grid min-w-0 grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
         {/* Card 1: Current Revenue */}
         <div className="p-5 rounded-2xl flex items-center justify-between relative overflow-hidden group bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border border-blue-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
@@ -256,13 +257,13 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
               {filteredOrders.length} ca · {currentTeeth} răng
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
+          <div className="dashboard-kpi-icon w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 text-sky-300 flex items-center justify-center shrink-0 relative">
             <DollarSign className="w-5 h-5" />
           </div>
         </div>
 
         {/* Card 2: Previous Period Comparison */}
-        <div className="p-5 rounded-2xl flex items-center justify-between relative overflow-hidden group bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 text-white border border-teal-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+        <div className="p-5 rounded-2xl flex flex-wrap items-center justify-between gap-1 sm:flex-nowrap sm:gap-0 relative overflow-hidden group bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 text-white border border-teal-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-teal-500/15 blur-2xl pointer-events-none" />
           <div className="relative">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300/85 block">
@@ -277,7 +278,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
           </div>
           {prevMonthKey && (
             <span
-              className={`font-mono text-xs font-bold flex items-center gap-1 px-2.5 py-1 rounded-lg border relative ${
+              className={`font-mono text-xs font-bold flex max-sm:self-start items-center gap-1 px-2.5 py-1 rounded-lg border relative ${
                 currentRevenue >= prevRevenue
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-400/25'
                   : 'bg-amber-500/15 text-amber-300 border-amber-400/25'
@@ -294,7 +295,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
         </div>
 
         {/* Card 3: Active Clinic & PDF Invoice */}
-        <div className="p-5 rounded-2xl flex items-center justify-between relative overflow-hidden group bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 text-white border border-violet-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+        <div className="max-sm:col-span-2 p-5 rounded-2xl flex items-center justify-between relative overflow-hidden group bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 text-white border border-violet-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-violet-500/15 blur-2xl pointer-events-none" />
           <div className="relative min-w-0 pr-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300/85 block">
@@ -315,7 +316,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                 selectedMonth === 'ALL' ? '' : selectedMonth
               )
             }
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/25 text-white font-bold text-xs rounded-xl cursor-pointer shrink-0 transition-all relative"
+            className="flex items-center gap-1.5 px-2 py-2 sm:px-3.5 bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/25 text-white font-bold text-xs rounded-xl cursor-pointer shrink-0 transition-all relative"
           >
             <FileDown className="w-3.5 h-3.5 text-sky-300" />
             In Bảng Kê PDF
