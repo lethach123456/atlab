@@ -10,6 +10,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { createClinicNameResolver } from '../utils/clinicPartners';
 import type {
   CashflowTransaction,
   ClinicDebtRecord,
@@ -30,6 +31,24 @@ export interface WorkspaceData {
   debts: ClinicDebtRecord[];
   partners: ClinicPartner[];
   profile: LabProfileConfig;
+}
+
+/** Renames retain the link to historical records without rewriting their source data. */
+export function resolveWorkspaceClinicNames(data: WorkspaceData): WorkspaceData {
+  const resolveName = createClinicNameResolver(data.partners);
+  const resolve = <T extends { clinicName?: string }>(records: T[]): T[] => records.map((record) => {
+    if (!record.clinicName) return record;
+    const clinicName = resolveName(record.clinicName);
+    return clinicName === record.clinicName ? record : { ...record, clinicName };
+  });
+  return {
+    ...data,
+    orders: resolve(data.orders),
+    debts: resolve(data.debts),
+    payments: resolve(data.payments),
+    deliveries: resolve(data.deliveries),
+    cashflows: resolve(data.cashflows),
+  };
 }
 
 const workspaceCollections = {
@@ -119,7 +138,7 @@ export function subscribeWorkspaceData(
           Object.assign(state, { [stateKey]: records });
         }
         ready.add(stateKey);
-        if (ready.size === Object.keys(workspaceCollections).length) onData({ ...state });
+        if (ready.size === Object.keys(workspaceCollections).length) onData(resolveWorkspaceClinicNames(state));
       },
       (error) => {
         if (!closed) onError(workspaceError(error));

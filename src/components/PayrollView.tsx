@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import type { DentalOrder } from '../types/dental';
 import type { UserProfile } from '../types/user';
 import type { SaleCommission } from '../types/commission';
+import { buildEmployeeRoster, buildPayrollRows, calculateSaleCommissionInfo, getEmployeeKey } from '../utils/payrollReport';
 import type {
   EmployeePayroll,
   EmployeePayrollInput,
@@ -59,32 +60,7 @@ const POSITION_SUGGESTIONS = [
   'Giao nhận (Shipper nội bộ)',
 ];
 
-const normalizeClinic = (name: string) =>
-  name
-    .trim()
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(/^nha\s+khoa\s+/i, '')
-    .replace(/thuỷ/g, 'thủy')
-    .replace(/hoà/g, 'hòa')
-    .replace(/quý/g, 'quí')
-    .replace(/\s*-\s*/g, '-')
-    .replace(/\s+/g, ' ');
-
-export function getEmployeeKey(record: {
-  employeeType: EmployeeSourceType;
-  saleUserId?: string;
-  employeeName: string;
-}): string {
-  if (record.employeeType === 'sale' && record.saleUserId?.trim()) {
-    return `sale:${record.saleUserId.trim()}`;
-  }
-  return `custom:${record.employeeName
-    .trim()
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')}`;
-}
+export { getEmployeeKey } from '../utils/payrollReport';
 
 export function isVirtualRecordId(id: string): boolean {
   return id.startsWith('virtual__');
@@ -158,220 +134,25 @@ export const PayrollView: React.FC<PayrollViewProps> = ({
     [users]
   );
 
-  // Master Employee Roster: Once an employee is added in any period, their fixed info
-  // (employeeName, position, phone, employeeType, saleUserId, and fixed baseSalary)
-  // is preserved across all months (10/2026, 11/2026, 12/2026, etc.).
-  const employeeRoster = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        key: string;
-        employeeType: EmployeeSourceType;
-        saleUserId: string;
-        employeeName: string;
-        employeeEmail: string;
-        phone: string;
-        position: string;
-        baseSalary: number;
-        updatedAt: number;
-      }
-    >();
+  const employeeRoster = useMemo(() => buildEmployeeRoster(records), [records]);
 
-    for (const r of records) {
-      const key = getEmployeeKey(r);
-      const existing = map.get(key);
-      const rUpdated = r.updatedAt || 0;
-      if (!existing || rUpdated >= existing.updatedAt) {
-        map.set(key, {
-          key,
-          employeeType: r.employeeType,
-          saleUserId: r.saleUserId,
-          employeeName: r.employeeName,
-          employeeEmail: r.employeeEmail || existing?.employeeEmail || '',
-          phone: r.phone || existing?.phone || '',
-          position: r.position || existing?.position || 'Nhân viên',
-          baseSalary: r.baseSalary,
-          updatedAt: rUpdated,
-        });
-      }
-    }
-
-    return Array.from(map.values()).sort((a, b) =>
-      a.employeeName.localeCompare(b.employeeName, 'vi')
-    );
-  }, [records]);
-
-  // Calculate automatic commission for a saleUserId in a given monthYear
-  // Only include clinics that actually have revenue > 0 ("những nha khoa có số")
   const getSaleCommissionInfo = React.useCallback(
-    (saleUid: string, targetMonthYear: string) => {
-      const monthOrders =
-        targetMonthYear === 'ALL'
-          ? orders
-          : orders.filter((o) => o.monthYear === targetMonthYear);
-
-      const assigned = commissions.filter((c) => c.saleId === saleUid);
-      const details: {
-        clinicName: string;
-        ratePercent: number;
-        revenue: number;
-        commission: number;
-      }[] = [];
-
-      let totalCommission = 0;
-      let totalRevenue = 0;
-
-      for (const cfg of assigned) {
-        const key = normalizeClinic(cfg.clinicName);
-        const clinicRev = monthOrders
-          .filter((o) => o.clinicName && normalizeClinic(o.clinicName) === key)
-          .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-
-        // Only keep clinics that have revenue > 0 in this period
-        if (clinicRev <= 0) continue;
-
-        const comm = Math.round((clinicRev * cfg.ratePercent) / 100);
-        totalRevenue += clinicRev;
-        totalCommission += comm;
-        details.push({
-          clinicName: cfg.clinicName,
-          ratePercent: cfg.ratePercent,
-          revenue: clinicRev,
-          commission: comm,
-        });
-      }
-
-      details.sort((a, b) => b.revenue - a.revenue);
-
-      return {
-        totalCommission,
-        totalRevenue,
-        clinicCount: details.length,
-        assignedCount: assigned.length,
-        details,
-      };
-    },
+    (saleUid: string, month: string) => calculateSaleCommissionInfo(orders, commissions, saleUid, month),
     [commissions, orders]
   );
 
-  // Precomputed map for selectedMonth
-  const saleCommissionMap = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        totalCommission: number;
-        totalRevenue: number;
-        clinicCount: number;
-        assignedCount: number;
-        details: {
-          clinicName: string;
-          ratePercent: number;
-          revenue: number;
-          commission: number;
-        }[];
-      }
-    >();
+  const saleCommissionMap = useMemo(
+    () => new Map(saleUsers.map((sale) => [sale.uid, getSaleCommissionInfo(sale.uid, selectedMonth)])),
+    [saleUsers, getSaleCommissionInfo, selectedMonth]
+  );
 
-    for (const sale of saleUsers) {
-      map.set(sale.uid, getSaleCommissionInfo(sale.uid, selectedMonth));
-    }
-
-    return map;
-  }, [saleUsers, getSaleCommissionInfo, selectedMonth]);
-
-  // Build records for the selected month:
-  // Every employee in employeeRoster appears in every month with their fixed baseSalary,
-  // while allowance, commissionAmount, bonus, deduction, workDays, paymentStatus, notes
-  // are specific to that month!
-  const monthRecords = useMemo(() => {
-    if (selectedMonth === 'ALL') {
-      return records.map((r) => {
-        const key = getEmployeeKey(r);
-        const master = employeeRoster.find((m) => m.key === key);
-        const fixedBase = master ? master.baseSalary : r.baseSalary;
-        const effectiveComm =
-          r.employeeType === 'sale' && r.saleUserId
-            ? getSaleCommissionInfo(r.saleUserId, r.monthYear).totalCommission
-            : r.commissionAmount;
-        const netSalary = Math.max(
-          0,
-          fixedBase + r.allowance + effectiveComm + r.bonus - r.deduction
-        );
-        return {
-          ...r,
-          baseSalary: fixedBase,
-          commissionAmount: effectiveComm,
-          netSalary,
-        };
-      });
-    }
-
-    const savedInMonth = new Map<string, EmployeePayroll>();
-    for (const r of records) {
-      if (r.monthYear === selectedMonth) {
-        savedInMonth.set(getEmployeeKey(r), r);
-      }
-    }
-
-    return employeeRoster.map((emp) => {
-      const saved = savedInMonth.get(emp.key);
-      const autoSaleComm =
-        emp.employeeType === 'sale' && emp.saleUserId
-          ? saleCommissionMap.get(emp.saleUserId)?.totalCommission ?? 0
-          : 0;
-
-      if (saved) {
-        const fixedBase = emp.baseSalary;
-        const effectiveComm =
-          emp.employeeType === 'sale' && emp.saleUserId
-            ? autoSaleComm
-            : saved.commissionAmount;
-        const netSalary = Math.max(
-          0,
-          fixedBase +
-            saved.allowance +
-            effectiveComm +
-            saved.bonus -
-            saved.deduction
-        );
-        return {
-          ...saved,
-          employeeName: emp.employeeName,
-          employeeEmail: emp.employeeEmail,
-          phone: emp.phone,
-          position: emp.position,
-          baseSalary: fixedBase,
-          commissionAmount: effectiveComm,
-          netSalary,
-        };
-      }
-
-      // Employee exists in roster from another period, but hasn't had custom monthly fields saved in selectedMonth yet:
-      // Keep fixed baseSalary, and default monthly variables for this period (auto-calculating Sale commission for selectedMonth).
-      const netSalary = Math.max(0, emp.baseSalary + autoSaleComm);
-
-      return {
-        id: `virtual__${emp.key}__${selectedMonth}`,
-        monthYear: selectedMonth,
-        employeeType: emp.employeeType,
-        saleUserId: emp.saleUserId,
-        employeeName: emp.employeeName,
-        employeeEmail: emp.employeeEmail,
-        phone: emp.phone,
-        position: emp.position,
-        workDays: 26,
-        baseSalary: emp.baseSalary,
-        allowance: 0,
-        commissionAmount: autoSaleComm,
-        bonus: 0,
-        deduction: 0,
-        netSalary,
-        paymentStatus: 'unpaid' as PayrollPaymentStatus,
-        paymentDate: `05/${selectedMonth}`,
-        notes: '',
-      };
-    });
-  }, [records, selectedMonth, employeeRoster, saleCommissionMap, getSaleCommissionInfo]);
+  const monthRecords = useMemo(() => buildPayrollRows(
+    records,
+    employeeRoster,
+    selectedMonth,
+    new Map(Array.from(saleCommissionMap, ([uid, info]) => [uid, info.totalCommission])),
+    (uid, month) => getSaleCommissionInfo(uid, month).totalCommission
+  ), [records, employeeRoster, selectedMonth, saleCommissionMap, getSaleCommissionInfo]);
 
   const filteredRecords = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();

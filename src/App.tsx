@@ -28,9 +28,13 @@ import {
   sortMonthYearsDesc,
   getPreviousMonthYear,
 } from './utils/financeUtils';
+import { calculateDebtRows, normalizeClinicName, DEBT_START_MONTH, debtMonthValue } from './utils/debtLedger';
+import { buildClinicPartnerIndex, createClinicNameResolver, getClinicOptions, prepareClinicPartnerChange } from './utils/clinicPartners';
 import { Header, NavTab } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { RevenueView } from './components/RevenueView';
+import { ProfitView } from './components/ProfitView';
+import { PROFIT_EXPENSE_CATEGORIES, isManualProfitExpense, type ProfitExpenseInput } from './utils/profit';
 import { OrderListView } from './components/OrderListView';
 import { DebtManagementView } from './components/DebtManagementView';
 import { CashflowView } from './components/CashflowView';
@@ -74,10 +78,10 @@ function loadNavigationSession(key: string, isAdmin: boolean): { activeTab: NavT
   const fallback = { activeTab: 'dashboard' as NavTab, settingsSubTab: 'clinics' as SettingsSubTab };
   try {
     const saved = JSON.parse(localStorage.getItem(key) || 'null');
-    const tabs: NavTab[] = ['dashboard', 'revenue', 'orders', 'debt', 'cashflow', 'delivery', 'payroll', 'settings'];
+    const tabs: NavTab[] = ['dashboard', 'revenue', 'orders', 'debt', 'cashflow', 'delivery', 'profit', 'payroll', 'settings'];
     const subTabs: SettingsSubTab[] = ['clinics', 'fdichart', 'materials', 'warranty', 'profile', 'users', 'commissions', 'payroll'];
     const restrictedSubTab = !isAdmin && (saved?.settingsSubTab === 'users' || saved?.settingsSubTab === 'commissions' || saved?.settingsSubTab === 'payroll');
-    const restrictedMainTab = !isAdmin && saved?.activeTab === 'payroll';
+    const restrictedMainTab = !isAdmin && (saved?.activeTab === 'payroll' || saved?.activeTab === 'profit');
     return {
       activeTab: tabs.includes(saved?.activeTab) && !restrictedMainTab ? saved.activeTab : fallback.activeTab,
       settingsSubTab: subTabs.includes(saved?.settingsSubTab) && !restrictedSubTab ? saved.settingsSubTab : fallback.settingsSubTab,
@@ -94,12 +98,22 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const [debtPayments, setDebtPayments] = useState<DebtPaymentRecord[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [cashflows, setCashflows] = useState<CashflowTransaction[]>([]);
+  const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
   const [labProfile, setLabProfile] = useState<LabProfileConfig>({ labName: '', tagline: '', hotline: '', address: '', email: '', bankName: '', bankAccountNumber: '', bankAccountHolder: '', directorName: '' });
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState('');
   const [pendingWrites, setPendingWrites] = useState(0);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [commissions, setCommissions] = useState<SaleCommission[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState('');
+  const clinicDiscountRates = useMemo(() => new Map(
+    Array.from(buildClinicPartnerIndex(clinicPartners), ([key, partner]) => [key, partner.discountPercent ?? 0])
+  ), [clinicPartners]);
+  const [storedCommissions, setCommissions] = useState<SaleCommission[]>([]);
+  const commissions = useMemo(() => {
+    const resolveName = createClinicNameResolver(clinicPartners);
+    return storedCommissions.map((record) => ({ ...record, clinicName: resolveName(record.clinicName) }));
+  }, [storedCommissions, clinicPartners]);
   const [commissionsLoading, setCommissionsLoading] = useState(true);
   const [commissionsError, setCommissionsError] = useState('');
   const [payrolls, setPayrolls] = useState<EmployeePayroll[]>([]);
@@ -159,7 +173,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
       if (settingsSubTab === 'users' || settingsSubTab === 'commissions' || settingsSubTab === 'payroll') {
         setSettingsSubTab('clinics');
       }
-      if (activeTab === 'payroll') {
+      if (activeTab === 'payroll' || activeTab === 'profit') {
         setActiveTab('dashboard');
       }
     }
@@ -168,6 +182,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
   // Cross-view filters
   const [revenueMonthFilter, setRevenueMonthFilter] = useState<string>('');
   const [revenueClinicFilter, setRevenueClinicFilter] = useState<string>('');
+  const [deliveryMonthFilter, setDeliveryMonthFilter] = useState<string>('');
   const [warrantyLookupCode, setWarrantyLookupCode] = useState<string>('');
 
   // Modals state
@@ -198,6 +213,10 @@ function Workspace({ profile }: { profile: UserProfile }) {
     paidAmount: number;
     shippingFeeTotal: number;
     previousMonthDebt: number;
+    additionalCharges: number;
+    discountAmount: number;
+    openingAdjustment: number;
+    orderSubtotal?: number;
     previousMonthLabel: string;
   }>({
     isOpen: false,
@@ -207,6 +226,9 @@ function Workspace({ profile }: { profile: UserProfile }) {
     paidAmount: 0,
     shippingFeeTotal: 0,
     previousMonthDebt: 0,
+    additionalCharges: 0,
+    discountAmount: 0,
+    openingAdjustment: 0,
     previousMonthLabel: '',
   });
 
@@ -216,8 +238,9 @@ function Workspace({ profile }: { profile: UserProfile }) {
     return subscribeWorkspaceData(ownerId, (data) => {
       const migrationKey = 'at_dental_partners_migrated_' + ownerId;
       if (profile.uid === ownerId && !importingPartners && localStorage.getItem(migrationKey) !== 'done') {
+        const partnerIndex = buildClinicPartnerIndex(data.partners);
         const localPartners = getClinicPartners().filter((partner) =>
-          !data.partners.some((saved) => saved.name.trim().toLowerCase() === partner.name.trim().toLowerCase())
+          !partnerIndex.has(normalizeClinicName(partner.name))
         );
         importingPartners = true;
         const migrate = async () => {
@@ -247,7 +270,17 @@ function Workspace({ profile }: { profile: UserProfile }) {
       setUsers([]);
       return;
     }
-    return subscribeUsers(ownerId, setUsers, () => setSyncError('Không đọc được danh sách tài khoản.'));
+    setUsersLoading(true);
+    setUsersError('');
+    return subscribeUsers(ownerId, (records) => {
+      setUsers(records);
+      setUsersLoading(false);
+    }, () => {
+      const message = 'Không đọc được danh sách tài khoản.';
+      setUsersError(message);
+      setUsersLoading(false);
+      setSyncError(message);
+    });
   }, [ownerId, profile.role]);
 
   useEffect(() => {
@@ -286,30 +319,32 @@ function Workspace({ profile }: { profile: UserProfile }) {
     return sortMonthYearsDesc(Array.from(set));
   }, [orders]);
 
-  const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
-
-  const addClinicPartner = async (partner: ClinicPartner) => {
-    if (isReadOnly) return;
-    await saveWorkspaceRecord('clinicPartners', 'partner_' + crypto.randomUUID(), partner, ownerId, true);
+  const persistClinicPartner = async (originalName: string | null, input: ClinicPartner, archived = false) => {
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
+    const { existing, identityKey, data } = prepareClinicPartnerChange(clinicPartners, orders, input, originalName, archived);
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([ownerId, identityKey])));
+    const id = existing?.id || 'partner_' + Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    setPendingWrites((count) => count + 1);
+    try {
+      await saveWorkspaceRecord('clinicPartners', id, data, ownerId, !existing?.id);
+    } finally {
+      setPendingWrites((count) => count - 1);
+    }
   };
 
-  const clinicOptions = useMemo(() => {
-    const addresses = new Map<string, string>();
-    for (const order of orders) {
-      const name = order.clinicName?.trim();
-      if (!name) continue;
-      const address = order.clinicAddress?.trim() || '';
-      const knownAddress = addresses.get(name);
-      if (!knownAddress || (knownAddress === 'Đà Nẵng' && address)) {
-        addresses.set(name, address || knownAddress || '');
-      }
-    }
-    for (const partner of clinicPartners) {
-      addresses.set(partner.name, partner.address.trim() || addresses.get(partner.name) || '');
-    }
-    return Array.from(addresses, ([name, address]) => ({ name, address }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-  }, [orders, clinicPartners]);
+  const addClinicPartner = (partner: ClinicPartner) => persistClinicPartner(null, partner);
+  const updateClinicPartner = (originalName: string, partner: ClinicPartner) => persistClinicPartner(originalName, partner);
+  const deleteClinicPartner = (clinicName: string) => {
+    const existing = buildClinicPartnerIndex(clinicPartners).get(normalizeClinicName(clinicName));
+    return persistClinicPartner(clinicName, {
+      name: existing?.name || clinicName,
+      address: '',
+      phone: '',
+      discountPercent: 0,
+    }, true);
+  };
+
+  const clinicOptions = useMemo(() => getClinicOptions(orders, clinicPartners), [orders, clinicPartners]);
 
   const clinicNames = useMemo(() => clinicOptions.map(({ name }) => name), [clinicOptions]);
 
@@ -470,6 +505,29 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
   };
 
+  const handleAddProfitExpense = async ({ monthYear, kind, title, amount }: ProfitExpenseInput) => {
+    if (profile.role !== 'admin') throw new Error('Chỉ quản trị viên được thêm chi phí.');
+    const category = PROFIT_EXPENSE_CATEGORIES[kind];
+    const cleanTitle = title.trim();
+    if (!category || debtMonthValue(monthYear) === null || !cleanTitle || cleanTitle.length > 300 ||
+        !Number.isSafeInteger(amount) || amount <= 0) {
+      throw new Error('Nhập nội dung và số tiền hợp lệ cho kỳ đã chọn.');
+    }
+    const id = `cf_profit_${crypto.randomUUID()}`;
+    const transaction: CashflowTransaction = {
+      id, type: 'expense', category, title: cleanTitle, amount, monthYear,
+      date: '', paymentMethod: '', notes: '', createdAt: Date.now(),
+    };
+    await saveWorkspaceRecord('cashflows', id, transaction, ownerId, true);
+  };
+
+  const handleDeleteProfitExpense = async (id: string) => {
+    if (profile.role !== 'admin' || !cashflows.some((row) => row.id === id && isManualProfitExpense(row))) {
+      throw new Error('Không tìm thấy khoản chi đã thêm từ mục Lợi nhuận.');
+    }
+    await deleteWorkspaceRecord('cashflows', id, ownerId);
+  };
+
   // Delivery CRUD
   const handleAddDelivery = (
     delivData: Omit<DeliveryRecord, 'id' | 'createdAt'>
@@ -560,130 +618,80 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const handleOpenInvoicePdf = (
     targetOrders: DentalOrder[],
     clinicName: string,
-    monthYear: string,
-    explicitPaidAmount?: number,
-    explicitPreviousDebt?: number
+    monthYear: string
   ) => {
-    const normalizeKey = (name: string) =>
-      name
-        .trim()
-        .normalize('NFC')
-        .toLowerCase()
-        .replace(/^nha\s+khoa\s+/i, '')
-        .replace(/thuỷ/g, 'thủy')
-        .replace(/hoà/g, 'hòa')
-        .replace(/quý/g, 'quí')
-        .replace(/\s*-\s*/g, '-')
-        .replace(/\s+/g, ' ');
-
-    const mVal = (m: string) => {
-      const [mm, yy] = m.split('/').map(Number);
-      return (yy || 0) * 12 + (mm || 0);
+    const effectiveMonth = monthYear && monthYear !== 'ALL' ? monthYear : '';
+    const matchClinic = (name: string) =>
+      !clinicName || normalizeClinicName(name) === normalizeClinicName(clinicName);
+    const monthValue = (month: string) => {
+      const [m, y] = month.split('/').map(Number);
+      return y * 12 + m;
     };
 
-    const effectiveMonth =
-      (monthYear && monthYear !== 'ALL' ? monthYear : targetOrders[0]?.monthYear) ||
-      '11/2026';
-    const prevMonth = getPreviousMonthYear(effectiveMonth);
-
-    const matchClinic = (name: string) => {
-      if (!clinicName) return true;
-      return normalizeKey(name) === normalizeKey(clinicName);
-    };
-
-    const paid =
-      explicitPaidAmount !== undefined
-        ? explicitPaidAmount
-        : debtPayments
-            .filter((p) => {
-              if (!matchClinic(p.clinicName || '')) return false;
-              if (monthYear && monthYear !== 'ALL' && p.monthYear !== monthYear) return false;
-              return true;
-            })
-            .reduce((s, p) => s + p.amount, 0);
-
-    const shipFee = deliveries
-      .filter((d) => {
-        if (d.payer !== 'clinic') return false;
-        if (!matchClinic(d.clinicName || '')) return false;
-        if (monthYear && monthYear !== 'ALL' && d.monthYear !== monthYear) return false;
-        return true;
-      })
-      .reduce((s, d) => s + d.shippingFee, 0);
-
+    let paidAmount = 0;
     let previousMonthDebt = 0;
-    if (explicitPreviousDebt !== undefined) {
-      previousMonthDebt = Math.max(0, explicitPreviousDebt);
-    } else {
-      const baseline = '10/2026';
-      const targetVal = mVal(effectiveMonth);
-      const firstVal = mVal(baseline);
-      const prevVal = mVal(prevMonth);
-      const isCumulativeFromOct = prevVal >= firstVal;
-
-      const baseRecords = clinicDebts.filter(
-        (d) => d.monthYear === baseline && matchClinic(d.clinicName)
-      );
-      const targetRecords = clinicDebts.filter(
-        (d) => d.monthYear === effectiveMonth && matchClinic(d.clinicName)
-      );
-
-      let baseOldDebt = 0;
-      let manualPrevDebt = 0;
-      let recordPaid = 0;
-
-      if (targetRecords.length > 0) {
-        baseOldDebt = targetRecords.reduce((s, r) => s + (r.oldDebt || 0), 0);
-        manualPrevDebt = targetRecords.reduce((s, r) => s + (r.currentMonthDebt || 0), 0);
-        recordPaid = targetRecords.reduce((s, r) => s + (r.paidAmount || 0), 0);
-      } else if (targetVal >= firstVal) {
-        baseOldDebt = baseRecords.reduce((s, r) => s + (r.oldDebt || 0), 0);
-        manualPrevDebt = baseRecords.reduce((s, r) => s + (r.currentMonthDebt || 0), 0);
-        recordPaid =
-          targetVal === firstVal
-            ? baseRecords.reduce((s, r) => s + (r.paidAmount || 0), 0)
-            : 0;
+    let additionalCharges = 0;
+    let discountAmount = 0;
+    let openingAdjustment = 0;
+    let orderSubtotal: number | undefined;
+    if (effectiveMonth) {
+      const rows = calculateDebtRows(orders, clinicDebts, debtPayments, effectiveMonth, clinicDiscountRates)
+        .filter((row) => matchClinic(row.clinicName));
+      previousMonthDebt = rows.reduce((sum, row) => sum + row.oldDebt, 0);
+      paidAmount = rows.reduce((sum, row) => sum + row.paidAmount, 0);
+      discountAmount = rows.reduce((sum, row) => sum + row.discountAmount, 0);
+      openingAdjustment = rows.reduce((sum, row) => sum + row.openingAdjustment, 0);
+      additionalCharges = rows.reduce((sum, row) => sum + (row.openingSnapshot ? 0 : row.manualCurrentDebt), 0);
+      if (effectiveMonth === DEBT_START_MONTH && clinicDebts.some((row) => row.openingSnapshot)) {
+        orderSubtotal = rows.reduce((sum, row) => sum + row.currentMonthDebt, 0);
       }
-
-      const includedIds = new Set(targetOrders.map((o) => o.id));
-      const prevOrdersRevenue = orders
-        .filter((o) => {
-          if (!o.clinicName || !o.monthYear) return false;
-          if (includedIds.has(o.id)) return false;
-          if (!matchClinic(o.clinicName)) return false;
-          const v = mVal(o.monthYear);
-          return isCumulativeFromOct
-            ? v >= firstVal && v <= prevVal
-            : o.monthYear === prevMonth;
-        })
-        .reduce((s, o) => s + (o.totalAmount || 0), 0);
-
-      const prevPayments = debtPayments
-        .filter((p) => {
-          if (!p.clinicName || !p.monthYear) return false;
-          if (!matchClinic(p.clinicName)) return false;
-          const v = mVal(p.monthYear);
-          return isCumulativeFromOct
-            ? v >= firstVal && v <= prevVal
-            : p.monthYear === prevMonth;
-        })
-        .reduce((s, p) => s + (p.amount || 0), 0);
-
-      previousMonthDebt = Math.max(
-        0,
-        baseOldDebt + manualPrevDebt + prevOrdersRevenue - (recordPaid + prevPayments)
-      );
+    } else {
+      // All-month invoices already include the order history. Count each month's
+      // actual payments and manual charges once, without adding carried balances.
+      const months = new Set([
+        ...orders.map((row) => row.monthYear),
+        ...clinicDebts.map((row) => row.monthYear),
+        ...debtPayments.map((row) => row.monthYear),
+      ]);
+      for (const month of months) {
+        if (!/^\d{2}\/\d{4}$/.test(month) || monthValue(month) < monthValue(DEBT_START_MONTH)) continue;
+        const rows = calculateDebtRows(orders, clinicDebts, debtPayments, month, clinicDiscountRates)
+          .filter((row) => matchClinic(row.clinicName));
+        paidAmount += rows.reduce((sum, row) => sum + row.paidAmount - row.carriedCredit, 0);
+        discountAmount += rows.reduce((sum, row) => sum + row.discountAmount, 0);
+        openingAdjustment += rows.reduce((sum, row) => sum + row.openingAdjustment, 0);
+        additionalCharges += rows.reduce((sum, row) => sum + (row.openingSnapshot ? 0 : row.manualCurrentDebt), 0);
+        if (month === DEBT_START_MONTH && clinicDebts.some((row) => row.openingSnapshot)) {
+          previousMonthDebt = rows.reduce((sum, row) => sum + row.oldDebt, 0);
+          orderSubtotal = targetOrders
+            .filter((order) => order.monthYear !== DEBT_START_MONTH)
+            .reduce((sum, order) => sum + order.totalAmount, 0)
+            + rows.reduce((sum, row) => sum + row.currentMonthDebt, 0);
+        }
+      }
     }
+
+    const shippingFeeTotal = deliveries
+      .filter((delivery) =>
+        delivery.payer === 'clinic' &&
+        matchClinic(delivery.clinicName || '') &&
+        (!effectiveMonth || delivery.monthYear === effectiveMonth)
+      )
+      .reduce((sum, delivery) => sum + delivery.shippingFee, 0);
 
     setInvoiceModalData({
       isOpen: true,
       orders: targetOrders,
       clinicName,
       monthYear: effectiveMonth,
-      paidAmount: paid,
-      shippingFeeTotal: shipFee,
+      paidAmount,
+      shippingFeeTotal,
       previousMonthDebt,
-      previousMonthLabel: prevMonth,
+      additionalCharges,
+      discountAmount,
+      openingAdjustment,
+      orderSubtotal,
+      previousMonthLabel: effectiveMonth ? getPreviousMonthYear(effectiveMonth) : '',
     });
   };
 
@@ -776,11 +784,12 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 readOnly={isReadOnly}
                 clinicDebts={clinicDebts}
                 payments={debtPayments}
+                discountRates={clinicDiscountRates}
                 onUpdateClinicDebts={handleUpdateClinicDebts}
                 onAddPayment={handleAddDebtPayment}
                 onDeletePayment={handleDeleteDebtPayment}
-                onExportStatementPdf={(ords, clinic, month, paid, prevDebt) =>
-                  handleOpenInvoicePdf(ords, clinic, month, paid, prevDebt)
+                onExportStatementPdf={(ords, clinic, month) =>
+                  handleOpenInvoicePdf(ords, clinic, month)
                 }
               />
             )}
@@ -802,9 +811,24 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 partnerClinics={clinicOptions}
                 orders={orders}
                 availableMonths={availableMonths}
+                initialMonth={deliveryMonthFilter}
                 onAddDelivery={handleAddDelivery}
                 onUpdateDelivery={handleUpdateDelivery}
                 onDeleteDelivery={handleDeleteDelivery}
+              />
+            )}
+
+            {activeTab === 'profit' && profile.role === 'admin' && (
+              <ProfitView
+                sources={{ orders, clinicDebts, discountRates: clinicDiscountRates, cashflows, deliveries, payrolls, commissions, users }}
+                loading={payrollsLoading || commissionsLoading || usersLoading}
+                loadError={payrollsError || commissionsError || usersError}
+                onAddExpense={handleAddProfitExpense}
+                onDeleteExtra={handleDeleteProfitExpense}
+                onOpenDelivery={(month) => {
+                  setDeliveryMonthFilter(month);
+                  setActiveTab('delivery');
+                }}
               />
             )}
 
@@ -864,6 +888,8 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 } : undefined}
                 clinicPartners={clinicPartners}
                 onAddClinicPartner={addClinicPartner}
+                onUpdateClinicPartner={updateClinicPartner}
+                onDeleteClinicPartner={deleteClinicPartner}
                 orders={orders}
                 materialPrices={materialPrices}
                 labProfile={labProfile}
@@ -936,6 +962,10 @@ function Workspace({ profile }: { profile: UserProfile }) {
         paidAmount={invoiceModalData.paidAmount}
         shippingFeeTotal={invoiceModalData.shippingFeeTotal}
         previousMonthDebt={invoiceModalData.previousMonthDebt}
+        additionalCharges={invoiceModalData.additionalCharges}
+        discountAmount={invoiceModalData.discountAmount}
+        openingAdjustment={invoiceModalData.openingAdjustment}
+        orderSubtotal={invoiceModalData.orderSubtotal}
         previousMonthLabel={invoiceModalData.previousMonthLabel}
         labProfile={labProfile}
       />

@@ -52,11 +52,14 @@ export interface ClinicDebtRecord {
   id: string;
   clinicName: string;
   monthYear: string; // MM/YYYY (e.g. "10/2026")
-  oldDebt: number; // Nợ Cũ (VNĐ)
-  currentMonthDebt: number; // Công Nợ Tháng Này (VNĐ)
-  totalDebt: number; // Tổng Công Nợ = oldDebt + currentMonthDebt
-  paidAmount: number; // ĐÃ TT (VNĐ)
-  remainingDebt: number; // Còn Lại = totalDebt - paidAmount
+  openingSnapshot?: boolean; // Imported September statement replaces September order totals
+  discountAmount?: number; // Fixed discount on the imported statement
+  openingAdjustment?: number; // Difference between stated and calculated closing balance
+  oldDebt: number; // Imported opening amount, or cached opening balance on later periods
+  currentMonthDebt: number; // Manual charges added to this period's order revenue (VNĐ)
+  totalDebt: number; // Cached displayed total, including automatically calculated revenue
+  paidAmount: number; // Manual payments only; excludes debtPayments and carried credit
+  remainingDebt: number; // Cached closing debt; recomputed from source entries by debtLedger
   orderIndex: number; // Thứ tự hiển thị theo bảng chuẩn
   notes?: string;
   updatedAt?: number;
@@ -108,9 +111,14 @@ export interface LabProfileConfig {
 }
 
 export interface ClinicPartner {
+  id?: string;
   name: string;
   address: string;
   phone: string;
+  discountPercent?: number;
+  archived?: boolean;
+  previousNames?: string[];
+  updatedAt?: number;
 }
 
 export interface ClinicSummary {

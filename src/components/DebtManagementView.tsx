@@ -4,9 +4,9 @@ import { DentalOrder, DebtPaymentRecord, ClinicDebtRecord } from '../types/denta
 import {
   formatVND,
   sortMonthYearsDesc,
-  extractMonthYear,
-  getPreviousMonthYear,
 } from '../utils/financeUtils';
+import { calculateDebtRows, DEBT_START_MONTH, debtMonthValue } from '../utils/debtLedger';
+import { getCurrentMonthYear } from '../utils/dashboardMetrics';
 import {
   CreditCard,
   Calendar,
@@ -28,259 +28,70 @@ interface DebtManagementViewProps {
   readOnly?: boolean;
   clinicDebts: ClinicDebtRecord[];
   payments: DebtPaymentRecord[];
+  discountRates: ReadonlyMap<string, number>;
   onUpdateClinicDebts: (nextDebts: ClinicDebtRecord[]) => void;
   onAddPayment: (payment: Omit<DebtPaymentRecord, 'id' | 'createdAt'>) => void;
   onDeletePayment: (id: string) => void;
   onExportStatementPdf: (
     orders: DentalOrder[],
     clinicName: string,
-    monthYear: string,
-    paidAmount: number,
-    previousMonthDebt?: number
+    monthYear: string
   ) => void;
 }
-
-const monthValue = (month: string) => {
-  const [m, y] = month.split('/').map(Number);
-  return y * 12 + m;
-};
 
 export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
   orders,
   readOnly = false,
   clinicDebts,
   payments,
+  discountRates,
   onUpdateClinicDebts,
   onAddPayment,
   onDeletePayment,
   onExportStatementPdf,
 }) => {
   const availableMonths = useMemo(() => {
-    const set = new Set<string>(['10/2026', '11/2026']);
+    const set = new Set<string>([DEBT_START_MONTH, getCurrentMonthYear()]);
     clinicDebts.forEach((d) => {
       if (d.monthYear) set.add(d.monthYear);
     });
     orders.forEach((o) => {
       if (o.monthYear) set.add(o.monthYear);
     });
-    return sortMonthYearsDesc(Array.from(set));
-  }, [clinicDebts, orders]);
+    payments.forEach((payment) => {
+      if (payment.monthYear) set.add(payment.monthYear);
+    });
+    return sortMonthYearsDesc(Array.from(set).filter((month) => {
+      const value = debtMonthValue(month);
+      return value !== null && value >= debtMonthValue(DEBT_START_MONTH)!;
+    }));
+  }, [clinicDebts, orders, payments]);
 
-  const [selectedMonth, setSelectedMonth] = useState<string>('11/2026');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentMonthYear());
   const [searchClinic, setSearchClinic] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'owing' | 'settled'>('all');
 
   // Inline row editing state
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [editOldDebt, setEditOldDebt] = useState<number>(0);
   const [editCurrentDebt, setEditCurrentDebt] = useState<number>(0);
   const [editPaidAmount, setEditPaidAmount] = useState<number>(0);
 
   const [editNotes, setEditNotes] = useState<string>('');
+  const [rowEditError, setRowEditError] = useState('');
 
   // Payment modal state
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [payClinic, setPayClinic] = useState('');
   const [payAmount, setPayAmount] = useState<number>(0);
-  const [payDate, setPayDate] = useState('28/10/2026');
-  const [payMonthYear, setPayMonthYear] = useState('10/2026');
+  const [payDate, setPayDate] = useState('');
+  const [payMonthYear, setPayMonthYear] = useState(() => getCurrentMonthYear());
   const [payMethod, setPayMethod] = useState<'transfer' | 'cash'>('transfer');
   const [payRef, setPayRef] = useState('');
   const [payNotes, setPayNotes] = useState('');
 
-  const monthDebtRows = useMemo(() => {
-    const baseline = '10/2026';
-    const targetMonth = selectedMonth === 'ALL' ? (availableMonths[0] || '11/2026') : selectedMonth;
-    const clinicKey = (name: string) =>
-      name
-        .trim()
-        .normalize('NFC')
-        .toLowerCase()
-        .replace(/^nha\s+khoa\s+/i, '')
-        .replace(/thuỷ/g, 'thủy')
-        .replace(/hoà/g, 'hòa')
-        .replace(/quý/g, 'quí')
-        .replace(/\s*-\s*/g, '-')
-        .replace(/\s+/g, ' ');
-
-    const safeIdSlug = (str: string) =>
-      str
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/đ/gi, 'd')
-        .replace(/[^a-zA-Z0-9_-]/g, '_')
-        .replace(/_+/g, '_')
-        .replace(/^_|_$/g, '')
-        .slice(0, 60) || 'clinic';
-
-    const target = monthValue(targetMonth);
-    const first = monthValue(baseline);
-    const prevMonth = getPreviousMonthYear(targetMonth);
-    const prevVal = monthValue(prevMonth);
-
-    // Baseline records (10/2026) hold initial Nợ Cũ
-    const baselineMap = new Map<string, ClinicDebtRecord>();
-    for (const row of clinicDebts.filter((r) => r.monthYear === baseline)) {
-      const baseK = clinicKey(row.clinicName);
-      const finalKey = baselineMap.has(baseK) ? `${baseK}__${row.id}` : baseK;
-      baselineMap.set(finalKey, row);
-    }
-
-    // Target month explicit records (if user edited a row in targetMonth)
-    const targetRecordedMap = new Map<string, ClinicDebtRecord>();
-    for (const row of clinicDebts.filter((r) => r.monthYear === targetMonth)) {
-      const baseK = clinicKey(row.clinicName);
-      // Match against baseline key if possible
-      const matchedKey =
-        Array.from(baselineMap.entries()).find(([, bRow]) => row.id.startsWith(bRow.id))?.[0] ||
-        baseK;
-      targetRecordedMap.set(matchedKey, row);
-    }
-
-    // Công Nợ Tháng Trước:
-    // - Khi chọn 10/2026 -> lấy doanh thu tháng trước là 09/2026 (T09)
-    // - Khi chọn 11/2026 -> lấy doanh thu tháng trước là 10/2026 (T10)
-    // - Khi chọn các tháng tiếp theo (12/2026...) -> cộng dồn từ 10/2026 đến tháng trước (prevMonth)
-    const isCumulativeFromOct = prevVal >= first;
-    const ordersByClinic = new Map<string, DentalOrder[]>();
-    const clinicDisplayNames = new Map<string, string>();
-
-    for (const order of orders) {
-      if (!order.clinicName?.trim() || !order.monthYear) continue;
-      const mVal = monthValue(order.monthYear);
-      const inRange = isCumulativeFromOct
-        ? mVal >= first && mVal <= prevVal
-        : order.monthYear === prevMonth;
-      if (!inRange) continue;
-
-      const key = clinicKey(order.clinicName);
-      const group = ordersByClinic.get(key) ?? [];
-      group.push(order);
-      ordersByClinic.set(key, group);
-      if (!clinicDisplayNames.has(key)) {
-        clinicDisplayNames.set(key, order.clinicName.trim());
-      }
-    }
-
-    const paidByClinic = new Map<string, number>();
-    for (const payment of payments) {
-      if (!payment.clinicName?.trim() || !payment.monthYear) continue;
-      const mVal = monthValue(payment.monthYear);
-      const inRange =
-        target > first ? mVal >= first && mVal <= target : payment.monthYear === targetMonth;
-      if (!inRange) continue;
-
-      const key = clinicKey(payment.clinicName);
-      paidByClinic.set(key, (paidByClinic.get(key) ?? 0) + payment.amount);
-      if (!clinicDisplayNames.has(key)) {
-        clinicDisplayNames.set(key, payment.clinicName.trim());
-      }
-    }
-
-    const allKeys = new Set<string>([
-      ...baselineMap.keys(),
-      ...targetRecordedMap.keys(),
-      ...ordersByClinic.keys(),
-      ...paidByClinic.keys(),
-    ]);
-
-    const rows = Array.from(allKeys).map((key) => {
-      const baseRow = baselineMap.get(key);
-      const targetRow = targetRecordedMap.get(key);
-      const clinicOrders = ordersByClinic.get(key) ?? [];
-
-      // Group clinic orders by monthYear in chronological order (e.g. 10/2026 -> 11/2026)
-      const byMonth = new Map<
-        string,
-        { monthYear: string; shortLabel: string; revenue: number; orderCount: number; teethCount: number }
-      >();
-      for (const o of clinicOrders) {
-        const my = o.monthYear || targetMonth;
-        if (!byMonth.has(my)) {
-          const mm = my.split('/')[0] || my;
-          byMonth.set(my, {
-            monthYear: my,
-            shortLabel: `T${parseInt(mm, 10) || mm}`,
-            revenue: 0,
-            orderCount: 0,
-            teethCount: 0,
-          });
-        }
-        const entry = byMonth.get(my)!;
-        entry.revenue += o.totalAmount || 0;
-        entry.orderCount += 1;
-        entry.teethCount += o.teethCount ?? 0;
-      }
-
-      const monthlyBreakdown = Array.from(byMonth.values()).sort(
-        (a, b) => monthValue(a.monthYear) - monthValue(b.monthYear)
-      );
-
-      const autoOrderDebt = monthlyBreakdown.reduce((sum, m) => sum + m.revenue, 0);
-      const manualCurrentDebt =
-        targetRow !== undefined
-          ? targetRow.currentMonthDebt || 0
-          : target === first
-          ? baseRow?.currentMonthDebt || 0
-          : 0;
-
-      const oldDebt = targetRow?.oldDebt ?? baseRow?.oldDebt ?? 0;
-      const currentMonthDebt = manualCurrentDebt + autoOrderDebt;
-      const totalDebt = oldDebt + currentMonthDebt;
-
-      const paidFromRecords =
-        targetRow !== undefined
-          ? targetRow.paidAmount || 0
-          : target === first
-          ? baseRow?.paidAmount || 0
-          : 0;
-      const paidFromPayments = paidByClinic.get(key) ?? 0;
-      const paidAmount = paidFromRecords + paidFromPayments;
-
-      const monthSuffix = targetMonth.replace('/', '_');
-      const rowId =
-        targetRow?.id ??
-        (target === first && baseRow?.id
-          ? baseRow.id
-          : baseRow?.id
-          ? `${baseRow.id}_${monthSuffix}`
-          : `debt_${monthSuffix}_${safeIdSlug(key)}`);
-
-      const rawNote = (targetRow?.notes ?? (target === first ? baseRow?.notes : '') ?? '').trim();
-      const cleanNote = /^công\s*nợ\s*nha\s*khoa/i.test(rawNote) ? '' : rawNote;
-
-      const currentMonthOrders = orders.filter(
-        (o) => o.clinicName && clinicKey(o.clinicName) === key && o.monthYear === targetMonth
-      );
-
-      return {
-        id: rowId,
-        clinicName:
-          targetRow?.clinicName ??
-          baseRow?.clinicName ??
-          clinicDisplayNames.get(key) ??
-          clinicOrders[0]?.clinicName ??
-          key,
-        monthYear: targetMonth,
-        oldDebt,
-        currentMonthDebt,
-        autoOrderDebt,
-        paidFromPayments,
-        monthlyBreakdown,
-        totalDebt,
-        paidAmount,
-        remainingDebt: Math.max(0, totalDebt - paidAmount),
-        orderIndex: targetRow?.orderIndex ?? baseRow?.orderIndex ?? 999,
-        notes: cleanNote,
-        updatedAt: targetRow?.updatedAt ?? baseRow?.updatedAt ?? 0,
-        orders: currentMonthOrders,
-      };
-    });
-
-    return rows.sort(
-      (a, b) => a.orderIndex - b.orderIndex || a.clinicName.localeCompare(b.clinicName, 'vi')
-    );
-  }, [clinicDebts, payments, orders, selectedMonth, availableMonths]);
+  const monthDebtRows = useMemo(
+    () => calculateDebtRows(orders, clinicDebts, payments, selectedMonth, discountRates),
+    [clinicDebts, payments, orders, selectedMonth, discountRates]
+  );
 
   const filteredDebtRows = useMemo(() => {
     return monthDebtRows.filter((item) => {
@@ -288,25 +99,25 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
         const q = searchClinic.toLowerCase().trim();
         if (!item.clinicName.toLowerCase().includes(q)) return false;
       }
-      if (statusFilter === 'owing' && item.remainingDebt <= 0) return false;
-      if (statusFilter === 'settled' && item.remainingDebt > 0) return false;
+      if (item.remainingDebt <= 0) return false;
       return true;
     });
-  }, [monthDebtRows, searchClinic, statusFilter]);
+  }, [monthDebtRows, searchClinic]);
 
   const summaryTotals = useMemo(() => {
     const oldDebt = filteredDebtRows.reduce((s, c) => s + c.oldDebt, 0);
     const currentMonthDebt = filteredDebtRows.reduce((s, c) => s + c.currentMonthDebt, 0);
+    const discount = filteredDebtRows.reduce((s, c) => s + c.discountAmount, 0);
     const totalDebt = filteredDebtRows.reduce((s, c) => s + c.totalDebt, 0);
     const paid = filteredDebtRows.reduce((s, c) => s + c.paidAmount, 0);
     const remaining = filteredDebtRows.reduce((s, c) => s + c.remainingDebt, 0);
     const owingCount = filteredDebtRows.filter((c) => c.remainingDebt > 0).length;
-    return { oldDebt, currentMonthDebt, totalDebt, paid, remaining, owingCount };
+    return { oldDebt, currentMonthDebt, totalDebt, discount, paid, remaining, owingCount };
   }, [filteredDebtRows]);
 
   const allClinics = useMemo(() => {
     const set = new Set<string>();
-    monthDebtRows.forEach((r) => set.add(r.clinicName));
+    monthDebtRows.forEach((r) => { if (r.remainingDebt > 0) set.add(r.clinicName); });
     return Array.from(set);
   }, [monthDebtRows]);
 
@@ -324,30 +135,48 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
   }, [payments, selectedMonth, searchClinic]);
 
   const startEditingRow = (row: (typeof monthDebtRows)[number]) => {
+    setRowEditError('');
     setEditingRowId(row.id);
-    setEditOldDebt(row.oldDebt);
     setEditCurrentDebt(row.currentMonthDebt);
     setEditPaidAmount(row.paidAmount);
     setEditNotes(row.notes || '');
   };
 
   const handleSaveRowEdit = (row: (typeof monthDebtRows)[number]) => {
-    const targetMonth = selectedMonth === 'ALL' ? (availableMonths[0] || '11/2026') : selectedMonth;
-    const oldDebt = Math.max(0, Number(editOldDebt) || 0);
+    if (readOnly) return;
+    if (!Number.isSafeInteger(editCurrentDebt) || !Number.isSafeInteger(editPaidAmount)) {
+      setRowEditError('Vui lòng nhập số tiền nguyên hợp lệ.');
+      return;
+    }
+    if (editCurrentDebt < Math.max(row.autoOrderDebt, row.discountAmount)) {
+      setRowEditError('Phát sinh không được thấp hơn doanh thu tự tính hoặc khoản chiết khấu đã chốt.');
+      return;
+    }
+    if (editPaidAmount < row.paidFromPayments + row.carriedCredit) {
+      setRowEditError('Đã thanh toán gồm phiếu thu và dư có kỳ trước. Để giảm, hãy xóa phiếu thu tương ứng.');
+      return;
+    }
+    const targetMonth = selectedMonth;
+    const oldDebt = row.oldDebt;
     const enteredCurrentDebt = Math.max(0, Number(editCurrentDebt) || 0);
     const enteredPaidAmount = Math.max(0, Number(editPaidAmount) || 0);
 
     // Store only the manual portion above auto-calculated order revenue & payment records
     const manualCurrentDebt = Math.max(0, enteredCurrentDebt - (row.autoOrderDebt || 0));
-    const manualPaidAmount = Math.max(0, enteredPaidAmount - (row.paidFromPayments || 0));
-    const totalDebt = oldDebt + manualCurrentDebt + (row.autoOrderDebt || 0);
-    const remainingDebt = Math.max(0, totalDebt - (manualPaidAmount + (row.paidFromPayments || 0)));
+    const manualPaidAmount = Math.max(0, enteredPaidAmount - row.paidFromPayments - row.carriedCredit);
+    const totalDebt = oldDebt + manualCurrentDebt + row.autoOrderDebt - row.discountAmount;
+    const remainingDebt = Math.max(0, totalDebt - row.openingAdjustment - (manualPaidAmount + row.paidFromPayments + row.carriedCredit));
 
     const updatedRecord: ClinicDebtRecord = {
       id: row.id,
       clinicName: row.clinicName,
       monthYear: targetMonth,
       oldDebt,
+      ...(row.openingSnapshot ? {
+        openingSnapshot: true,
+        discountAmount: row.discountAmount,
+        openingAdjustment: row.openingAdjustment,
+      } : {}),
       currentMonthDebt: manualCurrentDebt,
       totalDebt,
       paidAmount: manualPaidAmount,
@@ -364,16 +193,17 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
 
     onUpdateClinicDebts(nextList);
     setEditingRowId(null);
+    setRowEditError('');
   };
 
   const openPaymentModalForClinic = (
     clinicName: string,
     suggestedAmount: number
   ) => {
-    const targetMonth = selectedMonth === 'ALL' ? '10/2026' : selectedMonth;
+    const targetMonth = selectedMonth;
     setPayClinic(clinicName);
     setPayAmount(suggestedAmount);
-    setPayDate(`28/${targetMonth}`);
+    setPayDate(new Date().toLocaleDateString('en-GB'));
     setPayMonthYear(targetMonth);
     setPayMethod('transfer');
     setPayRef(`UNC${Math.floor(100000 + Math.random() * 900000)}`);
@@ -383,12 +213,14 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
 
   const handleSavePayment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!payClinic.trim() || payAmount <= 0) return;
+    const month = debtMonthValue(payMonthYear);
+    if (readOnly || !payClinic.trim() || !Number.isSafeInteger(payAmount) || payAmount <= 0 ||
+      month === null || month < debtMonthValue(DEBT_START_MONTH)!) return;
     onAddPayment({
       clinicName: payClinic.trim(),
       amount: Number(payAmount),
-      paymentDate: payDate.trim() || `28/${payMonthYear}`,
-      monthYear: payMonthYear || extractMonthYear(payDate),
+      paymentDate: payDate.trim() || new Date().toLocaleDateString('en-GB'),
+      monthYear: payMonthYear,
       method: payMethod,
       referenceCode: payRef.trim(),
       notes: payNotes.trim(),
@@ -408,17 +240,14 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
               onChange={(e) => {
                 setSelectedMonth(e.target.value);
                 setEditingRowId(null);
+                setRowEditError('');
               }}
               className="pl-8 pr-3 py-1.5 text-xs font-bold bg-white/80 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white cursor-pointer"
             >
               {availableMonths.map((m) => (
                 <option key={m} value={m}>
                   Kỳ Tháng {m}
-                  {m === '11/2026'
-                    ? ' (Tháng này)'
-                    : m === '10/2026'
-                    ? ' (Tháng 10)'
-                    : ''}
+                  {m === getCurrentMonthYear() ? ' (Tháng này)' : ''}
                 </option>
               ))}
             </MonthFilter>
@@ -435,47 +264,12 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/80 rounded-xl border border-slate-200/60 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
-                statusFilter === 'all'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-2xs'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Tất cả ({monthDebtRows.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('owing')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
-                statusFilter === 'owing'
-                  ? 'bg-amber-500 text-white shadow-2xs'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Còn nợ
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('settled')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
-                statusFilter === 'settled'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Đã tất toán
-            </button>
-          </div>
         </div>
 
-        {!readOnly && (
+        {!readOnly && allClinics.length > 0 && (
           <button
             onClick={() =>
-              openPaymentModalForClinic(allClinics[0] || 'Tâm An', 5000000)
+              openPaymentModalForClinic(allClinics[0], monthDebtRows.find((row) => row.clinicName === allClinics[0])?.remainingDebt ?? 0)
             }
             className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-[0_4px_14px_rgba(37,99,235,0.3)] transition-all cursor-pointer"
           >
@@ -555,12 +349,20 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-900 dark:text-white">
               Bảng Công Nợ Theo Nha Khoa ({filteredDebtRows.length})
+              <span className="block mt-1 text-[10px] font-normal text-slate-500 dark:text-slate-400">
+                Tính từ tháng {DEBT_START_MONTH} · Nợ cũ tự chuyển sau thanh toán
+              </span>
             </h3>
             <span className="text-xs font-mono font-bold text-amber-600 dark:text-amber-400">
               Dư nợ: {formatVND(summaryTotals.remaining)}
             </span>
           </div>
 
+          {editingRowId && rowEditError && (
+            <p role="alert" className="px-4 py-2 text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40">
+              {rowEditError}
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-950/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[11px]">
@@ -568,11 +370,12 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                   <th className="py-2.5 px-3">Nha Khoa</th>
                   <th className="py-2.5 px-3 text-right">Nợ Cũ</th>
                   <th className="py-2.5 px-3 text-right">
-                    Công Nợ Tháng Trước{' '}
+                    Công Nợ Tháng Này{' '}
                     <span className="text-blue-600 dark:text-blue-400">
-                      (T{getPreviousMonthYear(selectedMonth === 'ALL' ? (availableMonths[0] || '11/2026') : selectedMonth).split('/')[0]})
+                      (T{selectedMonth.split('/')[0]})
                     </span>
                   </th>
+                  <th className="py-2.5 px-3 text-right">Chiết khấu</th>
                   <th className="py-2.5 px-3 text-right">Tổng Công Nợ</th>
                   <th className="py-2.5 px-3 text-right">ĐÃ TT</th>
                   <th className="py-2.5 px-3 text-right">Còn Lại</th>
@@ -580,6 +383,9 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                {filteredDebtRows.length === 0 && (
+                  <tr><td colSpan={8} className="p-6 text-center text-slate-500">Không có nha khoa còn nợ.</td></tr>
+                )}
                 {filteredDebtRows.map((item) => {
                   const isEditing = editingRowId === item.id;
                   const manualExtra = Math.max(0, item.currentMonthDebt - (item.autoOrderDebt || 0));
@@ -605,28 +411,24 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                         ) : null}
                       </td>
 
-                      {/* Nợ Cũ */}
+                      {/* The opening balance always follows the previous month's payments. */}
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step={50000}
-                            value={editOldDebt}
-                            onChange={(e) => setEditOldDebt(Number(e.target.value))}
-                            className="w-28 px-2 py-1 text-right font-mono text-xs border border-blue-500 rounded bg-white dark:bg-slate-900"
-                          />
-                        ) : (
-                          formatVND(item.oldDebt)
+                        {formatVND(item.oldDebt)}
+                        {isEditing && (
+                          <div className="text-[10px] font-sans font-normal text-slate-500 mt-1">
+                            Tự chuyển từ tháng trước
+                          </div>
                         )}
                       </td>
 
-                      {/* Công Nợ Tháng Này (Tự cộng dồn doanh thu T10, T11...) */}
+                      {/* Current-period order revenue and manually added charges. */}
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-700 dark:text-slate-300">
                         {isEditing ? (
                           <div className="inline-flex flex-col items-end gap-1">
                             <input
                               type="number"
-                              step={50000}
+                              step={1}
+                              min={item.autoOrderDebt}
                               value={editCurrentDebt}
                               onChange={(e) => setEditCurrentDebt(Number(e.target.value))}
                               className="w-28 px-2 py-1 text-right font-mono text-xs border border-blue-500 rounded bg-white dark:bg-slate-900"
@@ -674,10 +476,13 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                         )}
                       </td>
 
+                      <td className="py-2.5 px-3 text-right font-mono text-teal-700 dark:text-teal-300">
+                        {item.discountAmount > 0 ? formatVND(item.discountAmount) : '—'}
+                      </td>
                       {/* Tổng Công Nợ */}
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">
                         {isEditing
-                          ? formatVND((editOldDebt || 0) + (editCurrentDebt || 0))
+                          ? formatVND(item.oldDebt + (editCurrentDebt || 0) - item.discountAmount)
                           : formatVND(item.totalDebt)}
                       </td>
 
@@ -686,13 +491,21 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                         {isEditing ? (
                           <input
                             type="number"
-                            step={50000}
+                            step={1}
+                            min={item.paidFromPayments + item.carriedCredit}
                             value={editPaidAmount}
                             onChange={(e) => setEditPaidAmount(Number(e.target.value))}
                             className="w-28 px-2 py-1 text-right font-mono text-xs border border-emerald-500 rounded bg-white dark:bg-slate-900"
                           />
                         ) : (
-                          formatVND(item.paidAmount)
+                          <>
+                            {formatVND(item.paidAmount)}
+                            {item.carriedCredit > 0 && (
+                              <div className="text-[10px] font-sans font-normal mt-1">
+                                Gồm dư có kỳ trước: {formatVND(item.carriedCredit)}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -703,7 +516,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                             {formatVND(
                               Math.max(
                                 0,
-                                (editOldDebt || 0) + (editCurrentDebt || 0) - (editPaidAmount || 0)
+                                item.oldDebt + (editCurrentDebt || 0) - item.discountAmount - item.openingAdjustment - (editPaidAmount || 0)
                               )
                             )}
                           </span>
@@ -766,9 +579,7 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                             onExportStatementPdf(
                               item.orders,
                               item.clinicName,
-                              selectedMonth,
-                              item.paidAmount,
-                              item.totalDebt
+                              selectedMonth
                             )
                           }
                           className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-bold text-[11px] rounded-md transition-colors cursor-pointer"
@@ -791,6 +602,9 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-900 dark:text-white">
                     {formatVND(summaryTotals.currentMonthDebt)}
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-slate-900 dark:text-white">
+                    {formatVND(summaryTotals.discount)}
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-900 dark:text-white">
                     {formatVND(summaryTotals.totalDebt)}
@@ -912,7 +726,8 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                   <input
                     type="number"
                     required
-                    step={50000}
+                    min={1}
+                    step={1}
                     value={payAmount}
                     onChange={(e) => setPayAmount(Number(e.target.value))}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-950"

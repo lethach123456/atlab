@@ -4,6 +4,7 @@ import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
 import { DentalOrder, MaterialPriceConfig, ClinicPartner } from '../types/dental';
 import { exportToCSV } from '../services/storage';
 import { extractWarrantyYears } from '../utils/csvParser';
+import { getClinicOptions } from '../utils/clinicPartners';
 import {
   formatVND,
   sortMonthYearsDesc,
@@ -88,6 +89,9 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
 }) => {
   const tableRef = useRef<HTMLTableElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
+  const clinicAddresses = useMemo(() => new Map(
+    getClinicOptions(orders, clinicPartners).map(({ name, address }) => [name, address])
+  ), [orders, clinicPartners]);
   const [search, setSearch] = useState('');
 
   const [sortField, setSortField] = useState<SortField | 'default'>('default');
@@ -302,14 +306,9 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
         break;
       }
       case 'clinicName': {
-        const addresses = orders
-          .filter((item) => item.clinicName?.trim() === value)
-          .map((item) => item.clinicAddress?.trim())
-          .filter(Boolean);
         changes = {
           clinicName: value,
-          clinicAddress: clinicPartners.find((partner) => partner.name === value)?.address ||
-            addresses.find((address) => address !== 'Đà Nẵng') || addresses[0] || '',
+          clinicAddress: clinicAddresses.get(value) ?? '',
         };
         break;
       }
@@ -775,8 +774,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           tableRef={tableRef} tableScrollRef={tableScrollRef}
           clinics={clinicNames.map((name) => ({
             name,
-            address: clinicPartners.find((partner) => partner.name === name)?.address ||
-              orders.find((order) => order.clinicName.trim() === name && order.clinicAddress?.trim())?.clinicAddress || '',
+            address: clinicAddresses.get(name) ?? '',
           }))}
           onAdd={async (data) => {
             const created = await onQuickAdd(data);

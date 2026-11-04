@@ -9,6 +9,10 @@ export interface ExportInvoicePdfOptions {
   paidAmount?: number;
   shippingFeeTotal?: number;
   previousMonthDebt?: number;
+  additionalCharges?: number;
+  discountAmount?: number;
+  openingAdjustment?: number;
+  orderSubtotal?: number;
   previousMonthLabel?: string;
   labProfile: LabProfileConfig;
   invoiceCode: string;
@@ -89,6 +93,10 @@ export async function exportInvoiceToPdf(
     paidAmount = 0,
     shippingFeeTotal = 0,
     previousMonthDebt = 0,
+    additionalCharges = 0,
+    discountAmount = 0,
+    openingAdjustment = 0,
+    orderSubtotal,
     previousMonthLabel = '',
     labProfile: rawProfile,
     invoiceCode,
@@ -117,9 +125,9 @@ export async function exportInvoiceToPdf(
   }
 
   const totalTeeth = orders.reduce((s, o) => s + (o.teethCount || 1), 0);
-  const subtotal = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
-  const grandTotal = subtotal + previousMonthDebt + shippingFeeTotal;
-  const remainingBalance = Math.max(0, grandTotal - paidAmount);
+  const subtotal = orderSubtotal ?? orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+  const grandTotal = subtotal + previousMonthDebt + additionalCharges + shippingFeeTotal - discountAmount;
+  const remainingBalance = Math.max(0, grandTotal - paidAmount - openingAdjustment);
 
   const clinicAddress =
     orders.find((o) => o.clinicAddress && o.clinicAddress.trim() !== '')
@@ -175,80 +183,74 @@ export async function exportInvoiceToPdf(
 
   // --- DRAW HEADER ON FIRST PAGE ---
   let y = 38;
+  const headerRight = A4_WIDTH - marginX;
+  const invoiceWidth = 296;
+  const labWidth = contentWidth - invoiceWidth - 20;
+  const drawHeaderText = (text: string, x: number, top: number, width: number, lineHeight: number) => {
+    const lines = wrapText(ctx, text, width);
+    lines.forEach((line, index) => ctx.fillText(line, x, top + (index + 1) * lineHeight - 3));
+    return top + lines.length * lineHeight;
+  };
 
-  // Brand badge
+  // Lab information occupies its own column, including when contact lines wrap.
   ctx.fillStyle = '#0f172a';
-  drawRoundedRect(ctx, marginX, y, 36, 36, 8);
+  drawRoundedRect(ctx, marginX, y, 30, 30, 7);
   ctx.fill();
   ctx.fillStyle = '#ffffff';
-  ctx.font = `800 15px ${fontSans}`;
+  ctx.font = `800 12px ${fontSans}`;
   ctx.textAlign = 'center';
-  ctx.fillText('AT', marginX + 18, y + 23);
+  ctx.fillText('AT', marginX + 15, y + 19);
 
-  // Lab name & tagline
+  const labTextX = marginX + 40;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#0f172a';
-  ctx.font = `800 18px ${fontSans}`;
-  ctx.fillText(profile.labName.toUpperCase(), marginX + 46, y + 16);
-
+  ctx.font = `800 14px ${fontSans}`;
+  let labY = drawHeaderText(profile.labName.toUpperCase(), labTextX, y, labWidth - 40, 18);
   ctx.fillStyle = '#475569';
-  ctx.font = `500 11px ${fontSans}`;
-  ctx.fillText(profile.tagline, marginX + 46, y + 32);
+  ctx.font = `500 9.5px ${fontSans}`;
+  labY = drawHeaderText(profile.tagline, labTextX, labY, labWidth - 40, 13);
 
-  // Right side Invoice Meta
+  labY = Math.max(labY, y + 30) + 4;
+  ctx.font = `400 9.5px ${fontSans}`;
+  for (const line of [
+    `Địa chỉ: ${profile.address}`,
+    `Hotline Kỹ Thuật & Kế Toán: ${profile.hotline}`,
+    `TK Ngân hàng: ${profile.bankAccountNumber} (${profile.bankName}) - Chủ TK: ${profile.bankAccountHolder}`,
+  ]) {
+    labY = drawHeaderText(line, marginX, labY, labWidth, 13);
+  }
+
   ctx.textAlign = 'right';
   ctx.fillStyle = '#f1f5f9';
   const badgeText = `Số HĐ: ${invoiceCode}`;
-  ctx.font = `700 11px ${fontMono}`;
-  const badgeW = ctx.measureText(badgeText).width + 20;
-  drawRoundedRect(ctx, A4_WIDTH - marginX - badgeW, y, badgeW, 24, 5);
+  ctx.font = `700 9.5px ${fontMono}`;
+  const badgeW = Math.min(invoiceWidth, ctx.measureText(badgeText).width + 16);
+  drawRoundedRect(ctx, headerRight - badgeW, y, badgeW, 20, 5);
   ctx.fill();
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1;
   ctx.stroke();
 
   ctx.fillStyle = '#0f172a';
-  ctx.fillText(badgeText, A4_WIDTH - marginX - 10, y + 16);
+  ctx.fillText(badgeText, headerRight - 8, y + 13.5, badgeW - 16);
 
   ctx.fillStyle = '#1e3a8a';
-  ctx.font = `800 16px ${fontSans}`;
-  ctx.fillText(
-    'HÓA ĐƠN / BẢNG KÊ PHỤC HÌNH RĂNG SỨ',
-    A4_WIDTH - marginX,
-    y + 44
-  );
-
-  y += 50;
-
-  // Left Contact info & Right period info
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#475569';
-  ctx.font = `400 11px ${fontSans}`;
-  ctx.fillText(`Địa chỉ: ${profile.address}`, marginX, y);
-  ctx.fillText(`Hotline Kỹ Thuật & Kế Toán: ${profile.hotline}`, marginX, y + 16);
-  ctx.fillText(
-    `TK Ngân hàng: ${profile.bankAccountNumber} (${profile.bankName}) - Chủ TK: ${profile.bankAccountHolder}`,
-    marginX,
-    y + 32
-  );
-
-  ctx.textAlign = 'right';
+  ctx.font = `800 12px ${fontSans}`;
+  let invoiceY = drawHeaderText('HÓA ĐƠN / BẢNG KÊ PHỤC HÌNH RĂNG SỨ', headerRight, y + 25, invoiceWidth, 16);
   ctx.fillStyle = '#334155';
-  ctx.font = `600 11.5px ${fontSans}`;
-  ctx.fillText(
+  ctx.font = `600 10px ${fontSans}`;
+  invoiceY = drawHeaderText(
     `Kỳ kết toán: ${monthYear ? `Tháng ${monthYear}` : 'Toàn bộ các kỳ'}`,
-    A4_WIDTH - marginX,
-    y + 8
+    headerRight, invoiceY, invoiceWidth, 14
   );
   ctx.fillStyle = '#64748b';
-  ctx.font = `400 10.5px ${fontSans}`;
-  ctx.fillText(
+  ctx.font = `400 9.5px ${fontSans}`;
+  invoiceY = drawHeaderText(
     `Ngày xuất bảng kê: ${new Date().toLocaleDateString('vi-VN')}`,
-    A4_WIDTH - marginX,
-    y + 24
+    headerRight, invoiceY, invoiceWidth, 13
   );
 
-  y += 46;
+  y = Math.max(labY, invoiceY) + 10;
 
   // Header divider line
   ctx.strokeStyle = '#0f172a';
@@ -460,6 +462,9 @@ export async function exportInvoiceToPdf(
   const summaryRowsCount =
     2 +
     (previousMonthDebt > 0 ? 1 : 0) +
+    (additionalCharges > 0 ? 1 : 0) +
+    (discountAmount > 0 ? 1 : 0) +
+    (openingAdjustment > 0 ? 1 : 0) +
     (shippingFeeTotal > 0 ? 1 : 0) +
     (paidAmount > 0 ? 1 : 0);
   const footerNeededH = summaryRowsCount * 28 + 165;
@@ -520,7 +525,7 @@ export async function exportInvoiceToPdf(
   };
 
   drawSummaryRow(
-    `TỔNG TIỀN PHỤC HÌNH RĂNG SỨ (${orders.length} CA):`,
+    orderSubtotal === undefined ? `TỔNG TIỀN PHỤC HÌNH RĂNG SỨ (${orders.length} CA):` : 'PHÁT SINH THEO BẢNG CÔNG NỢ ĐÃ CHỐT:',
     formatVND(subtotal),
     {
       bg: '#f1f5f9',
@@ -539,6 +544,17 @@ export async function exportInvoiceToPdf(
     });
   }
 
+  if (additionalCharges > 0) {
+    drawSummaryRow(
+      'PHÁT SINH CÔNG NỢ NHẬP THÊM TRONG KỲ:',
+      `+ ${formatVND(additionalCharges)}`,
+      {
+        bg: '#ffffff',
+        textColor: '#334155',
+      }
+    );
+  }
+
   if (shippingFeeTotal > 0) {
     drawSummaryRow(
       'CƯỚC PHÍ GIAO VẬN MẪU & PHỤC HÌNH:',
@@ -548,6 +564,10 @@ export async function exportInvoiceToPdf(
         textColor: '#334155',
       }
     );
+  }
+
+  if (discountAmount > 0) {
+    drawSummaryRow('CHIẾT KHẤU NHA KHOA:', `- ${formatVND(discountAmount)}`, { bg: '#ecfdf5', textColor: '#065f46' });
   }
 
   if (paidAmount > 0) {
@@ -560,6 +580,10 @@ export async function exportInvoiceToPdf(
         valueColor: '#047857',
       }
     );
+  }
+
+  if (openingAdjustment > 0) {
+    drawSummaryRow('ĐIỀU CHỈNH THEO SỐ DƯ ĐÃ CHỐT:', `- ${formatVND(openingAdjustment)}`, { bg: '#f1f5f9' });
   }
 
   drawSummaryRow(

@@ -1,7 +1,8 @@
 import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo } from 'react';
 import { CashflowTransaction } from '../types/dental';
-import { formatVND, extractMonthYear } from '../utils/financeUtils';
+import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financeUtils';
+import { PAYROLL_EXPENSE_CATEGORY, DELIVERY_EXPENSE_CATEGORY, PROFIT_EXPENSE_CATEGORIES } from '../utils/profit';
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -29,12 +30,15 @@ const INCOME_CATEGORIES = [
 
 const EXPENSE_CATEGORIES = [
   'Mua phôi sứ & vật tư',
-  'Lương kỹ thuật viên',
-  'Chi phí giao vận',
+  PAYROLL_EXPENSE_CATEGORY,
+  DELIVERY_EXPENSE_CATEGORY,
+  PROFIT_EXPENSE_CATEGORIES.rent,
+  PROFIT_EXPENSE_CATEGORIES.utilities,
   'Điện nước & vận hành',
   'Bảo trì máy CAD/CAM & lò nung',
   'Chi phí tiếp khách / CSKH Nha khoa',
   'Khoản chi khác',
+  PROFIT_EXPENSE_CATEGORIES.extra,
 ];
 
 export const CashflowView: React.FC<CashflowViewProps> = ({
@@ -44,8 +48,10 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   onAddTransaction,
   onDeleteTransaction,
 }) => {
-  const latestMonth =
-    availableMonths.find((m) => m === '11/2026') || availableMonths[0] || '11/2026';
+  const cashflowMonths = useMemo(() => sortMonthYearsDesc([
+    ...new Set([...availableMonths, ...transactions.map((row) => row.monthYear).filter(Boolean)]),
+  ]), [availableMonths, transactions]);
+  const latestMonth = cashflowMonths.find((m) => m === '11/2026') || cashflowMonths[0] || '11/2026';
 
   const [selectedMonth, setSelectedMonth] = useState<string>(latestMonth);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -151,7 +157,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             className="hidden sm:block px-3 py-1.5 text-xs font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white cursor-pointer"
           >
             <option value="ALL">Tất cả tháng</option>
-            {availableMonths.map((m) => (
+            {cashflowMonths.map((m) => (
               <option key={m} value={m}>
                 Tháng {m}
               </option>

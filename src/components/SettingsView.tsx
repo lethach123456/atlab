@@ -40,6 +40,8 @@ interface SettingsViewProps {
   orders: DentalOrder[];
   clinicPartners: ClinicPartner[];
   onAddClinicPartner: (partner: ClinicPartner) => Promise<void>;
+  onUpdateClinicPartner: (originalName: string, partner: ClinicPartner) => Promise<void>;
+  onDeleteClinicPartner: (clinicName: string) => Promise<void>;
   materialPrices: MaterialPriceConfig[];
   labProfile: LabProfileConfig;
   warrantyLookupCode?: string;
@@ -65,6 +67,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   orders,
   clinicPartners,
   onAddClinicPartner,
+  onUpdateClinicPartner,
+  onDeleteClinicPartner,
   materialPrices,
   labProfile,
   warrantyLookupCode = '',
@@ -180,6 +184,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           readOnly={readOnly}
           partners={clinicPartners}
           onAddPartner={onAddClinicPartner}
+          onUpdatePartner={onUpdateClinicPartner}
+          onDeletePartner={onDeleteClinicPartner}
           onSelectClinicFilter={onSelectClinicForRevenue}
           onExportClinicInvoice={onExportClinicInvoice}
         />

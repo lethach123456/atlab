@@ -17,6 +17,7 @@ interface DeliveryManagementViewProps {
   readOnly?: boolean;
   orders: DentalOrder[];
   availableMonths: string[];
+  initialMonth?: string;
   onAddDelivery: (deliv: Omit<DeliveryRecord, 'id' | 'createdAt'>) => void;
   partnerClinics: { name: string; address: string }[];
   onUpdateDelivery: (id: string, changes: Partial<DeliveryRecord>) => Promise<void>;
@@ -50,6 +51,7 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
   readOnly = false,
   orders,
   availableMonths,
+  initialMonth,
   onAddDelivery,
   onUpdateDelivery,
   partnerClinics,
@@ -58,7 +60,7 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
   const latestMonth =
     availableMonths.find((m) => m === '11/2026') || availableMonths[0] || '11/2026';
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(latestMonth);
+  const [selectedMonth, setSelectedMonth] = useState<string>(initialMonth || latestMonth);
   const [selectedClinic, setSelectedClinic] = useState<string>('');
   const [selectedCourier, setSelectedCourier] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -84,8 +86,8 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
   const [formNotes, setFormNotes] = useState('');
 
   const deliveryMonths = useMemo(() => sortMonthYearsDesc(Array.from(new Set([
-    '11/2026', '10/2026', ...availableMonths, ...deliveries.map(({ monthYear }) => monthYear).filter(Boolean),
-  ]))), [availableMonths, deliveries]);
+    '11/2026', '10/2026', ...(initialMonth ? [initialMonth] : []), ...availableMonths, ...deliveries.map(({ monthYear }) => monthYear).filter(Boolean),
+  ]))), [availableMonths, deliveries, initialMonth]);
 
   const courierOptions = useMemo(() => Array.from(new Set([
     ...COURIER_OPTIONS, ...deliveries.map(({ courierName }) => courierName).filter(Boolean),

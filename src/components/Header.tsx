@@ -4,6 +4,7 @@ import { SettingsSubTab } from './SettingsView';
 import {
   LayoutDashboard,
   DollarSign,
+  ChartNoAxesCombined,
   FileSpreadsheet,
   CreditCard,
   Wallet,
@@ -29,6 +30,7 @@ import {
 export type NavTab =
   | 'dashboard'
   | 'revenue'
+  | 'profit'
   | 'orders'
   | 'debt'
   | 'cashflow'
@@ -73,7 +75,10 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'debt' as NavTab, label: 'Công nợ', icon: CreditCard },
     { id: 'cashflow' as NavTab, label: 'Thu chi', icon: Wallet },
     { id: 'delivery' as NavTab, label: 'Giao vận', icon: Truck },
-    ...(isAdmin ? [{ id: 'payroll' as NavTab, label: 'Bảng lương', icon: BadgeDollarSign }] : []),
+    ...(isAdmin ? [
+      { id: 'profit' as NavTab, label: 'Lợi nhuận', icon: ChartNoAxesCombined },
+      { id: 'payroll' as NavTab, label: 'Bảng lương', icon: BadgeDollarSign },
+    ] : []),
   ];
 
   const settingsSubItems = [
@@ -110,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Center Spatial Pill Dock */}
-          <nav className="hidden lg:flex items-center gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/70 rounded-xl border border-slate-200/70 dark:border-slate-800/80">
+          <nav className="hidden xl:flex items-center gap-1 p-1 bg-slate-100/80 dark:bg-slate-950/70 rounded-xl border border-slate-200/70 dark:border-slate-800/80">
             {mainNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -241,7 +246,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label={mobileMenuOpen ? 'Đóng menu' : 'Mở menu'} aria-expanded={mobileMenuOpen}
-              className="flex size-11 items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl lg:hidden"
+              className="flex size-11 items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl xl:hidden"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -251,7 +256,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden max-h-[calc(100dvh-5.5rem)] overflow-y-auto overscroll-contain mt-1.5 bento-card rounded-2xl px-4 py-3 space-y-1">
+        <div className="xl:hidden max-h-[calc(100dvh-5.5rem)] overflow-y-auto overscroll-contain mt-1.5 bento-card rounded-2xl px-4 py-3 space-y-1">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

@@ -235,12 +235,47 @@ service cloud.firestore {
       data.updatedAt == request.time;
     }
 
+    function validClinicPreviousName(names, index) {
+      return names.size() <= index ||
+        (names[index] is string && names[index].size() >= 1 && names[index].size() <= 250);
+    }
+
+    function validClinicPreviousNames(data) {
+      return !('previousNames' in data) ||
+        (data.previousNames is list && data.previousNames.size() <= 20 &&
+          validClinicPreviousName(data.previousNames, 0) &&
+          validClinicPreviousName(data.previousNames, 1) &&
+          validClinicPreviousName(data.previousNames, 2) &&
+          validClinicPreviousName(data.previousNames, 3) &&
+          validClinicPreviousName(data.previousNames, 4) &&
+          validClinicPreviousName(data.previousNames, 5) &&
+          validClinicPreviousName(data.previousNames, 6) &&
+          validClinicPreviousName(data.previousNames, 7) &&
+          validClinicPreviousName(data.previousNames, 8) &&
+          validClinicPreviousName(data.previousNames, 9) &&
+          validClinicPreviousName(data.previousNames, 10) &&
+          validClinicPreviousName(data.previousNames, 11) &&
+          validClinicPreviousName(data.previousNames, 12) &&
+          validClinicPreviousName(data.previousNames, 13) &&
+          validClinicPreviousName(data.previousNames, 14) &&
+          validClinicPreviousName(data.previousNames, 15) &&
+          validClinicPreviousName(data.previousNames, 16) &&
+          validClinicPreviousName(data.previousNames, 17) &&
+          validClinicPreviousName(data.previousNames, 18) &&
+          validClinicPreviousName(data.previousNames, 19));
+    }
+
     function isValidClinicPartner(data) {
       return data.keys().hasAll(['id', 'ownerId', 'name', 'address', 'phone', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['id', 'ownerId', 'name', 'address', 'phone', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'name', 'address', 'phone', 'createdAt', 'updatedAt',
+          'discountPercent', 'archived', 'previousNames']) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 250 &&
         data.address is string && data.address.size() <= 300 &&
-        data.phone is string && data.phone.size() <= 50;
+        data.phone is string && data.phone.size() <= 50 &&
+        (!('discountPercent' in data) ||
+          (data.discountPercent is number && data.discountPercent >= 0 && data.discountPercent <= 100)) &&
+        (!('archived' in data) || data.archived is bool) &&
+        validClinicPreviousNames(data);
     }
 
     function isValidMaterialPrice(data) {
@@ -267,7 +302,8 @@ service cloud.firestore {
         'totalDebt', 'paidAmount', 'remainingDebt', 'orderIndex', 'createdAt', 'updatedAt'
       ]) && data.keys().hasOnly([
         'id', 'ownerId', 'clinicName', 'monthYear', 'oldDebt', 'currentMonthDebt',
-        'totalDebt', 'paidAmount', 'remainingDebt', 'orderIndex', 'notes', 'createdAt', 'updatedAt'
+        'totalDebt', 'paidAmount', 'remainingDebt', 'orderIndex', 'notes', 'createdAt', 'updatedAt',
+        'openingSnapshot', 'discountAmount', 'openingAdjustment'
       ]) &&
         data.clinicName is string && data.clinicName.size() >= 1 && data.clinicName.size() <= 250 &&
         data.monthYear is string && data.monthYear.size() <= 16 &&
@@ -277,7 +313,10 @@ service cloud.firestore {
         data.paidAmount is number && data.paidAmount >= 0 &&
         data.remainingDebt is number && data.remainingDebt >= 0 &&
         data.orderIndex is number && data.orderIndex >= 0 &&
-        optionalString(data, 'notes', 1000);
+        optionalString(data, 'notes', 1000) &&
+        optionalAmount(data, 'discountAmount') &&
+        (!('openingAdjustment' in data) || (data.openingSnapshot == true && optionalAmount(data, 'openingAdjustment'))) &&
+        (!('openingSnapshot' in data) || (data.openingSnapshot is bool && data.monthYear == '09/2026'));
     }
 
     function isValidUser(data, uid) {

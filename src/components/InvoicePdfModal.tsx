@@ -21,6 +21,10 @@ interface InvoicePdfModalProps {
   paidAmount?: number;
   shippingFeeTotal?: number;
   previousMonthDebt?: number;
+  additionalCharges?: number;
+  discountAmount?: number;
+  openingAdjustment?: number;
+  orderSubtotal?: number;
   previousMonthLabel?: string;
   labProfile: LabProfileConfig;
 }
@@ -34,6 +38,10 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   paidAmount = 0,
   shippingFeeTotal = 0,
   previousMonthDebt = 0,
+  additionalCharges = 0,
+    discountAmount = 0,
+    openingAdjustment = 0,
+    orderSubtotal,
   previousMonthLabel = '',
   labProfile: rawProfile,
 }) => {
@@ -57,9 +65,9 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   };
 
   const totalTeeth = orders.reduce((s, o) => s + (o.teethCount || 1), 0);
-  const subtotal = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
-  const grandTotal = subtotal + previousMonthDebt + shippingFeeTotal;
-  const remainingBalance = Math.max(0, grandTotal - paidAmount);
+  const subtotal = orderSubtotal ?? orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+  const grandTotal = subtotal + previousMonthDebt + additionalCharges + shippingFeeTotal - discountAmount;
+  const remainingBalance = Math.max(0, grandTotal - paidAmount - openingAdjustment);
 
   const clinicAddress =
     orders.find((o) => o.clinicAddress && o.clinicAddress.trim() !== '')
@@ -91,6 +99,10 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
         paidAmount,
         shippingFeeTotal,
         previousMonthDebt,
+        additionalCharges,
+        discountAmount,
+        openingAdjustment,
+        orderSubtotal,
         previousMonthLabel,
         labProfile,
         invoiceCode,
@@ -344,7 +356,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                     colSpan={clinicName ? 6 : 7}
                     className="py-2.5 px-3 text-right uppercase text-xs"
                   >
-                    Tổng cộng tiền phục hình răng sứ ({orders.length} ca):
+                    {orderSubtotal === undefined ? `Tổng cộng tiền phục hình răng sứ (${orders.length} ca):` : 'Phát sinh theo bảng công nợ đã chốt:'}
                   </td>
                   <td className="py-2.5 px-2 text-center font-mono text-teal-900">
                     {totalTeeth} răng
@@ -366,6 +378,19 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                     </td>
                   </tr>
                 )}
+                {additionalCharges > 0 && (
+                  <tr className="bg-slate-50 font-semibold text-slate-700 border-t border-slate-200">
+                    <td
+                      colSpan={clinicName ? 7 : 8}
+                      className="py-2 px-3 text-right text-xs"
+                    >
+                      Phát sinh công nợ nhập thêm trong kỳ:
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono">
+                      + {formatVND(additionalCharges)}
+                    </td>
+                  </tr>
+                )}
                 {shippingFeeTotal > 0 && (
                   <tr className="bg-slate-50 font-semibold text-slate-700 border-t border-slate-200">
                     <td
@@ -379,6 +404,12 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                     </td>
                   </tr>
                 )}
+                {discountAmount > 0 && (
+                  <tr className="bg-teal-50 font-semibold text-teal-800">
+                    <td colSpan={clinicName ? 7 : 8} className="py-2 px-3 text-right">Chiết khấu nha khoa:</td>
+                    <td className="py-2 px-3 text-right font-mono">− {formatVND(discountAmount)}</td>
+                  </tr>
+                )}
                 {paidAmount > 0 && (
                   <tr className="bg-emerald-50/60 font-semibold text-emerald-800 border-t border-slate-200">
                     <td
@@ -390,6 +421,12 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                     <td className="py-2 px-3 text-right font-mono">
                       - {formatVND(paidAmount)}
                     </td>
+                  </tr>
+                )}
+                {openingAdjustment > 0 && (
+                  <tr className="bg-slate-50 font-semibold text-slate-700">
+                    <td colSpan={clinicName ? 7 : 8} className="py-2 px-3 text-right">Điều chỉnh theo số dư đã chốt:</td>
+                    <td className="py-2 px-3 text-right font-mono">− {formatVND(openingAdjustment)}</td>
                   </tr>
                 )}
                 <tr className="bg-slate-900 text-white font-extrabold border-t border-slate-900">

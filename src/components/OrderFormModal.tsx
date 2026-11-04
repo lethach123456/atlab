@@ -161,7 +161,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       patientName: patientName.trim(),
       phone: phone.trim(),
       clinicName,
-      clinicAddress: selectedClinic?.address || (legacyClinic && initialOrder?.clinicAddress) || '',
+      clinicAddress: selectedClinic ? selectedClinic.address : (legacyClinic && initialOrder?.clinicAddress) || '',
       material: material.trim() || 'Full zirco razor',
       warrantyPeriod: selectedWarranty,
       warrantyYears: initialOrder?.warrantyPeriod === selectedWarranty
