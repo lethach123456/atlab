@@ -381,6 +381,26 @@ service cloud.firestore {
         data.updatedAt == request.time;
     }
 
+    function isValidProfitMonthlyCost(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'monthYear', 'kind', 'amount', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'id', 'ownerId', 'monthYear', 'kind', 'amount', 'createdAt', 'updatedAt'
+      ]) &&
+        data.monthYear is string && data.monthYear.matches('^(0[1-9]|1[0-2])/[0-9]{4}$') &&
+        data.kind in ['rent', 'utilities'] &&
+        data.amount is int && data.amount >= 0 && data.amount <= 9007199254740991;
+    }
+
+    match /profitMonthlyCosts/{costId} {
+      allow get: if isAdmin() && (resource == null || isOwner(resource.data.ownerId));
+      allow list: if isAdmin() && isOwner(resource.data.ownerId);
+      allow create: if isAdmin() && canCreate(incoming(), costId) && isValidProfitMonthlyCost(incoming());
+      allow update: if isAdmin() && canUpdate(incoming(), costId) && isValidProfitMonthlyCost(incoming()) &&
+        incoming().monthYear == existing().monthYear && incoming().kind == existing().kind;
+      allow delete: if isAdmin() && isOwner(resource.data.ownerId);
+    }
+
     match /employeePayrolls/{payrollId} {
       allow get: if isAdmin() && (resource == null || isOwner(resource.data.ownerId));
       allow list: if isAdmin() && isOwner(resource.data.ownerId);

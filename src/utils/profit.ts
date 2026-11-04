@@ -21,6 +21,16 @@ export interface ProfitExpenseInput {
   amount: number;
 }
 
+export interface ProfitFixedExpense {
+  id: string;
+  monthYear: string;
+  kind: 'rent' | 'utilities';
+  amount: number;
+  updatedAt?: number;
+}
+
+export type ProfitFixedExpenseInput = Pick<ProfitFixedExpense, 'monthYear' | 'kind' | 'amount'>;
+
 export interface ProfitSources {
   orders: DentalOrder[];
   clinicDebts: ClinicDebtRecord[];
@@ -30,6 +40,7 @@ export interface ProfitSources {
   payrolls: EmployeePayroll[];
   commissions: SaleCommission[];
   users: UserProfile[];
+  fixedExpenses?: ProfitFixedExpense[];
 }
 
 export function isManualProfitExpense(row: CashflowTransaction): boolean {
@@ -102,8 +113,11 @@ export function calculateMonthlyProfit(month: string, sources: ProfitSources) {
     categories.delete(name);
     return total + amount;
   }, 0);
-  const rentExpense = takeCategories(PROFIT_EXPENSE_CATEGORIES.rent, 'Mặt bằng', 'Tiền thuê mặt bằng');
-  const utilitiesExpense = takeCategories(PROFIT_EXPENSE_CATEGORIES.utilities, 'Điện nước & vận hành', 'Tiền điện', 'Tiền nước');
+  const rentInCashflow = takeCategories(PROFIT_EXPENSE_CATEGORIES.rent, 'Mặt bằng', 'Tiền thuê mặt bằng');
+  const utilitiesInCashflow = takeCategories(PROFIT_EXPENSE_CATEGORIES.utilities, 'Điện nước & vận hành', 'Tiền điện', 'Tiền nước');
+  const fixedExpenses = (sources.fixedExpenses ?? []).filter((row) => row.monthYear === month);
+  const rentExpense = fixedExpenses.find((row) => row.kind === 'rent')?.amount ?? rentInCashflow;
+  const utilitiesExpense = fixedExpenses.find((row) => row.kind === 'utilities')?.amount ?? utilitiesInCashflow;
   const extraExpense = takeCategories(PROFIT_EXPENSE_CATEGORIES.extra);
   const payrollInCashflow = takeCategories(PAYROLL_EXPENSE_CATEGORY);
   const deliveryInCashflow = takeCategories(DELIVERY_EXPENSE_CATEGORY);
@@ -136,7 +150,9 @@ export function calculateMonthlyProfit(month: string, sources: ProfitSources) {
     margin: netRevenue > 0 ? profit / netRevenue : null,
     payrollExpense, savedPayroll, payrollInCashflow, payrollRows,
     deliveryExpense, labDelivery, deliveryInCashflow, assumedLabDelivery, clinicDelivery, deliveryRows,
-    operatingExpenses, rentExpense, utilitiesExpense, extraExpense, otherExpenses,
+    operatingExpenses, rentExpense, utilitiesExpense, rentInCashflow, utilitiesInCashflow, extraExpense, otherExpenses,
     expenseRows, extraRows, manualExpenseRows, salesRows,
   };
 }
+
+export type MonthlyProfitReport = ReturnType<typeof calculateMonthlyProfit>;

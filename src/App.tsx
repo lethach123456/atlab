@@ -34,7 +34,8 @@ import { Header, NavTab } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { RevenueView } from './components/RevenueView';
 import { ProfitView } from './components/ProfitView';
-import { PROFIT_EXPENSE_CATEGORIES, isManualProfitExpense, type ProfitExpenseInput } from './utils/profit';
+import { PROFIT_EXPENSE_CATEGORIES, isManualProfitExpense, type ProfitExpenseInput, type ProfitFixedExpense, type ProfitFixedExpenseInput } from './utils/profit';
+import { saveProfitFixedCost, subscribeProfitCosts } from './services/profitCosts';
 import { OrderListView } from './components/OrderListView';
 import { DebtManagementView } from './components/DebtManagementView';
 import { CashflowView } from './components/CashflowView';
@@ -119,6 +120,9 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const [payrolls, setPayrolls] = useState<EmployeePayroll[]>([]);
   const [payrollsLoading, setPayrollsLoading] = useState(true);
   const [payrollsError, setPayrollsError] = useState('');
+  const [profitFixedExpenses, setProfitFixedExpenses] = useState<ProfitFixedExpense[]>([]);
+  const [profitCostsLoading, setProfitCostsLoading] = useState(true);
+  const [profitCostsError, setProfitCostsError] = useState('');
   const [refresh, setRefresh] = useState(0);
   const ownerId = profile.workspaceOwnerId;
   const isReadOnly = profile.role === 'viewer';
@@ -308,6 +312,20 @@ function Workspace({ profile }: { profile: UserProfile }) {
     }, (msg) => {
       setPayrollsError(msg);
       setPayrollsLoading(false);
+    });
+  }, [ownerId, profile.role]);
+
+  useEffect(() => {
+    setProfitFixedExpenses([]);
+    setProfitCostsError('');
+    setProfitCostsLoading(profile.role === 'admin');
+    if (profile.role !== 'admin') return;
+    return subscribeProfitCosts(ownerId, (records) => {
+      setProfitFixedExpenses(records);
+      setProfitCostsLoading(false);
+    }, (message) => {
+      setProfitCostsError(message);
+      setProfitCostsLoading(false);
     });
   }, [ownerId, profile.role]);
 
@@ -522,10 +540,26 @@ function Workspace({ profile }: { profile: UserProfile }) {
   };
 
   const handleDeleteProfitExpense = async (id: string) => {
-    if (profile.role !== 'admin' || !cashflows.some((row) => row.id === id && isManualProfitExpense(row))) {
-      throw new Error('Không tìm thấy khoản chi đã thêm từ mục Lợi nhuận.');
+    if (profile.role !== 'admin' || !cashflows.some((row) => row.id === id &&
+      (isManualProfitExpense(row) || (row.type === 'expense' && row.category === PROFIT_EXPENSE_CATEGORIES.extra)))) {
+      throw new Error('Không tìm thấy khoản chi phí khác.');
     }
     await deleteWorkspaceRecord('cashflows', id, ownerId);
+  };
+
+  const handleUpdateProfitExpense = async ({ id, title, amount }: { id: string; title: string; amount: number }) => {
+    const existing = cashflows.find((row) => row.id === id && row.type === 'expense' && row.category === PROFIT_EXPENSE_CATEGORIES.extra);
+    if (profile.role !== 'admin' || !existing) throw new Error('Không tìm thấy khoản chi phí khác.');
+    const cleanTitle = title.trim();
+    if (!cleanTitle || cleanTitle.length > 300 || !Number.isSafeInteger(amount) || amount <= 0) {
+      throw new Error('Nhập nội dung và số tiền nguyên lớn hơn 0.');
+    }
+    await saveWorkspaceRecord('cashflows', id, { title: cleanTitle, amount }, ownerId);
+  };
+
+  const handleUpdateProfitFixedExpense = async (input: ProfitFixedExpenseInput) => {
+    if (profile.role !== 'admin') throw new Error('Chỉ quản trị viên được chỉnh sửa chi phí.');
+    await saveProfitFixedCost(ownerId, input);
   };
 
   // Delivery CRUD
@@ -820,11 +854,14 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
             {activeTab === 'profit' && profile.role === 'admin' && (
               <ProfitView
-                sources={{ orders, clinicDebts, discountRates: clinicDiscountRates, cashflows, deliveries, payrolls, commissions, users }}
-                loading={payrollsLoading || commissionsLoading || usersLoading}
-                loadError={payrollsError || commissionsError || usersError}
+                sources={{ orders, clinicDebts, discountRates: clinicDiscountRates, cashflows, deliveries, payrolls, commissions, users, fixedExpenses: profitFixedExpenses }}
+                labProfile={labProfile}
+                loading={payrollsLoading || commissionsLoading || usersLoading || profitCostsLoading}
+                loadError={payrollsError || commissionsError || usersError || profitCostsError}
                 onAddExpense={handleAddProfitExpense}
                 onDeleteExtra={handleDeleteProfitExpense}
+                onUpdateExpense={handleUpdateProfitExpense}
+                onUpdateFixedExpense={handleUpdateProfitFixedExpense}
                 onOpenDelivery={(month) => {
                   setDeliveryMonthFilter(month);
                   setActiveTab('delivery');
