@@ -15,8 +15,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, c
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [notice, setNotice] = useState('');
   const [role, setRole] = useState<UserRole>('sale');
+  const canEditEmail = editingUser?.role === 'sale' && editingUser.uid !== currentUserId;
 
   const createUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -60,6 +62,16 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, c
     }
     const changes: UpdateUserInput = {};
     if (displayName !== editingUser.displayName) changes.displayName = displayName;
+    if (canEditEmail) {
+      const email = String(values.get('email') ?? '').trim().toLowerCase();
+      if (email !== editingUser.email.toLowerCase()) {
+        if (users.some((user) => user.uid !== editingUser.uid && user.email.toLowerCase() === email)) {
+          setEmailError('Email này đã có trong danh sách người dùng.');
+          return;
+        }
+        changes.emailChange = { email, expectedEmail: editingUser.email };
+      }
+    }
     if (editingUser.uid !== currentUserId) {
       const role = values.get('role');
       const active = values.get('active') === 'true';
@@ -73,10 +85,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, c
     }
     setUpdatingId(editingUser.uid);
     setError('');
+    setEmailError('');
     setNotice('');
     try {
       await onUpdate(editingUser.uid, changes);
-      setNotice(`Đã cập nhật tài khoản ${editingUser.email}.`);
+      setNotice(`Đã cập nhật tài khoản ${changes.emailChange?.email ?? editingUser.email}.`);
       setEditingUser(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chưa cập nhật được người dùng. Vui lòng thử lại.');
@@ -144,13 +157,24 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, c
         <form key={editingUser.uid} onSubmit={updateUser} aria-busy={Boolean(updatingId)} className="bento-card space-y-4 rounded-2xl p-4">
           <div>
             <h2 className="text-sm font-bold">Sửa người dùng</h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{editingUser.email}</p>
+            {!canEditEmail && (
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{editingUser.email}</p>
+            )}
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className={`grid gap-4 ${canEditEmail ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
             <label className="grid gap-1.5 text-sm font-medium">
               Họ tên
               <input name="displayName" defaultValue={editingUser.displayName} maxLength={150} required autoFocus disabled={Boolean(updatingId)} className={inputClass} />
             </label>
+            {canEditEmail && (
+              <label className="grid content-start gap-1.5 text-sm font-medium">
+                Email đăng nhập
+                <input name="email" type="email" defaultValue={editingUser.email} autoComplete="off" autoCapitalize="none" spellCheck={false}
+                  maxLength={254} required disabled={Boolean(updatingId)} aria-invalid={Boolean(emailError)}
+                  aria-describedby={emailError ? 'edit-user-email-error' : undefined} onChange={() => setEmailError('')} className={inputClass} />
+                {emailError && <span id="edit-user-email-error" role="alert" className="text-xs text-rose-700 dark:text-rose-300">{emailError}</span>}
+              </label>
+            )}
             {editingUser.uid !== currentUserId && (
               <>
                 <label className="grid gap-1.5 text-sm font-medium">
@@ -206,7 +230,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, c
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <button type="button" aria-label={`Sửa tài khoản ${user.email}`}
-                      onClick={() => { setEditingUser(user); setAdding(false); setError(''); setNotice(''); }}
+                      onClick={() => { setEditingUser(user); setAdding(false); setError(''); setEmailError(''); setNotice(''); }}
                       disabled={Boolean(updatingId) || creating}
                       className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 font-semibold hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800">
                       <Pencil className="size-3.5" aria-hidden="true" /> Sửa

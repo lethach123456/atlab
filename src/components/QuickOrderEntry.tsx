@@ -231,18 +231,18 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
           else collapse();
         }
       }}>
-      {pickerOpen && (
-        <div ref={pickerRef} role="group" aria-label="Chọn vị trí răng FDI" className="absolute left-1/2 z-10 w-[min(96vw,80rem)] -translate-x-1/2 rounded-t-2xl border border-slate-200 bg-white p-3 shadow-[0_-12px_32px_rgba(15,23,42,0.20)] dark:border-slate-700 dark:bg-slate-900 sm:p-4"
+      {
+        <div ref={pickerRef} role="group" aria-label="Chọn vị trí răng FDI" aria-hidden={!pickerOpen} inert={!pickerOpen} data-open={pickerOpen} className="quick-teeth-picker absolute left-1/2 z-10 w-[min(96vw,40rem)] rounded-t-2xl border border-slate-200 bg-white p-2 shadow-[0_-12px_32px_rgba(15,23,42,0.20)] dark:border-slate-700 dark:bg-slate-900"
           style={{ bottom: 'calc(100% - 44px)' }}>
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-sm font-bold text-slate-800 dark:text-white">Chọn vị trí răng</span>
             <button type="button" onClick={() => setPickerOpen(false)} aria-label="Đóng sơ đồ răng"
-              className="flex size-11 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-slate-200 dark:hover:bg-slate-800">
+              className="flex size-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-slate-200 dark:hover:bg-slate-800">
               <X aria-hidden="true" className="size-5" />
             </button>
           </div>
           <div className="max-h-[min(65vh,32rem)] overflow-y-auto">
-            <FdiTeethPicker selectedIds={parseTeethNotation(values.teeth).toothIds}
+            <FdiTeethPicker compact selectedIds={parseTeethNotation(values.teeth).toothIds}
               onChange={(ids, formatted) => {
                 setValues((current) => ({ ...current, teeth: ids.length ? formatted : '', teethCount: String(ids.length || 1) }));
                 setError('');
@@ -250,7 +250,7 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
               }} />
           </div>
         </div>
-      )}
+      }
       <div aria-hidden={expanded} inert={expanded} className={`flex h-11 items-end justify-center ${expanded ? 'invisible' : ''}`}>
         <button ref={triggerRef} type="button" aria-expanded={expanded} aria-controls={panelId}
           aria-label={expanded ? 'Thu gọn nhập nhanh' : 'Thêm nhanh đơn hàng'} disabled={busy}

@@ -18,6 +18,7 @@ export interface CreateUserInput {
 }
 
 export interface UpdateUserInput {
+  emailChange?: { email: string; expectedEmail: string };
   displayName?: string;
   role?: UserRole;
   active?: boolean;

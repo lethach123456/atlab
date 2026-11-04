@@ -1,4 +1,5 @@
-import { deleteApp, initializeApp } from 'firebase/app';
+import { deleteApp, getApp, initializeApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   createUserWithEmailAndPassword,
   deleteUser,
@@ -22,14 +23,35 @@ import { auth, db } from '../lib/firebase';
 import type { UpdateUserInput, UserProfile, UserRole } from '../types/user';
 
 export function accountError(error: unknown): string {
-  const code = (error as { code?: string })?.code;
+  const { code, details } = (error ?? {}) as { code?: string; details?: { reason?: string } };
   switch (code) {
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
       return 'Email hoặc mật khẩu không đúng.';
     case 'auth/email-already-in-use':
+    case 'functions/already-exists':
       return 'Email này đã có tài khoản.';
+    case 'functions/invalid-argument':
+      return 'Email đăng nhập không hợp lệ.';
+    case 'functions/failed-precondition':
+      if (details?.reason === 'unsupported-provider') return 'Tài khoản dùng phương thức đăng nhập khác email và mật khẩu.';
+      return 'Thông tin tài khoản đã thay đổi. Mở lại form Sửa rồi thử lại.';
+    case 'functions/unauthenticated':
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    case 'functions/not-found':
+      if (details?.reason === 'sale-auth-not-found') return 'Không tìm thấy tài khoản đăng nhập của sale.';
+      return 'Chức năng đổi email chưa có trên Firebase. Vui lòng liên hệ quản trị dự án.';
+    case 'functions/aborted':
+      return 'Tài khoản đang được cập nhật. Vui lòng thử lại sau.';
+    case 'functions/unavailable':
+      if (details?.reason === 'profile-sync-pending') return 'Email đăng nhập đã đổi. Bấm Lưu lại với cùng email để đồng bộ hồ sơ.';
+      return 'Chưa kết nối được chức năng đổi email trên Firebase. Vui lòng thử lại sau.';
+    case 'functions/internal':
+    case 'functions/deadline-exceeded':
+      return 'Chưa lưu được email qua Firebase. Vui lòng thử lại sau.';
+    case 'account/profile-update-after-email':
+      return 'Đã đổi email đăng nhập. Các thay đổi khác chưa được lưu, vui lòng thử lại.';
     case 'auth/weak-password':
       return 'Mật khẩu cần ít nhất 12 ký tự.';
     case 'auth/popup-closed-by-user':
@@ -39,6 +61,7 @@ export function accountError(error: unknown): string {
     case 'auth/network-request-failed':
       return 'Không kết nối được. Vui lòng kiểm tra mạng.';
     case 'permission-denied':
+    case 'functions/permission-denied':
       return 'Tài khoản chưa có quyền thực hiện thao tác này.';
     default:
       return 'Không thực hiện được thao tác. Vui lòng thử lại.';
@@ -99,6 +122,20 @@ export async function createAccount(
   }
 }
 
-export async function updateAccount(uid: string, changes: UpdateUserInput) {
-  await updateDoc(doc(db, 'users', uid), { ...changes, updatedAt: serverTimestamp() });
+export async function updateAccount(uid: string, { emailChange, ...changes }: UpdateUserInput) {
+  if (emailChange) {
+    const updateSaleEmail = httpsCallable<{ uid: string; email: string; expectedEmail: string }, { email: string }>(
+      getFunctions(getApp(), 'us-central1'), 'updateSaleEmail',
+    );
+    await updateSaleEmail({ uid, ...emailChange });
+  }
+
+  if (Object.keys(changes).length > 0) {
+    try {
+      await updateDoc(doc(db, 'users', uid), { ...changes, updatedAt: serverTimestamp() });
+    } catch (error) {
+      if (emailChange) throw { code: 'account/profile-update-after-email' };
+      throw error;
+    }
+  }
 }

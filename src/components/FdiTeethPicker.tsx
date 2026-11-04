@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   ALL_ADULT_TEETH,
   QUADRANT_1,
@@ -16,11 +16,87 @@ interface FdiTeethPickerProps {
   compact?: boolean;
 }
 
+interface ToothDrag {
+  pointerId: number;
+  selecting: boolean;
+  visited: Set<number>;
+  selected: Set<number>;
+  lastX: number;
+  lastY: number;
+}
+
 export const FdiTeethPicker: React.FC<FdiTeethPickerProps> = ({
   selectedIds,
   onChange,
   compact = false,
 }) => {
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<ToothDrag | null>(null);
+
+  const emitSelection = (selected: Set<number>) => {
+    const next = Array.from(selected).sort((a, b) => a - b);
+    onChange(next, formatTeethList(next));
+  };
+
+  const visitTooth = (drag: ToothDrag, id: number) => {
+    if (drag.visited.has(id)) return;
+    drag.visited.add(id);
+    if (drag.selecting) {
+      drag.selected.add(id);
+    } else {
+      drag.selected.delete(id);
+    }
+    emitSelection(drag.selected);
+  };
+
+  const toothAtPoint = (x: number, y: number): number | null => {
+    const element = document.elementFromPoint(x, y);
+    const button = element?.closest<HTMLButtonElement>('[data-fdi-tooth]');
+    if (!button || !pickerRef.current?.contains(button)) return null;
+    const id = Number(button.dataset.fdiTooth);
+    return Number.isInteger(id) ? id : null;
+  };
+
+  const handleToothPointerDown = (event: React.PointerEvent<HTMLButtonElement>, id: number) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (dragRef.current) return;
+
+    const drag: ToothDrag = {
+      pointerId: event.pointerId,
+      selecting: !selectedIds.includes(id),
+      visited: new Set(),
+      selected: new Set(selectedIds),
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    dragRef.current = drag;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    visitTooth(drag, id);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    // Sample the path so a fast swipe still reaches teeth between pointer events.
+    const distance = Math.hypot(event.clientX - drag.lastX, event.clientY - drag.lastY);
+    const steps = Math.max(1, Math.ceil(distance / 6));
+    for (let step = 1; step <= steps; step += 1) {
+      const fraction = step / steps;
+      const id = toothAtPoint(
+        drag.lastX + (event.clientX - drag.lastX) * fraction,
+        drag.lastY + (event.clientY - drag.lastY) * fraction,
+      );
+      if (id !== null) visitTooth(drag, id);
+    }
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+  };
+
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+  };
+
   const toggleTooth = (id: number) => {
     let next: number[];
     if (selectedIds.includes(id)) {
@@ -76,9 +152,15 @@ export const FdiTeethPicker: React.FC<FdiTeethPickerProps> = ({
       <button
         key={id}
         type="button"
-        onClick={() => toggleTooth(id)}
+        data-fdi-tooth={id}
+        aria-pressed={isSelected}
+        onPointerDown={(event) => handleToothPointerDown(event, id)}
+        onClick={(event) => {
+          // Pointer input is handled on press; keyboard and assistive clicks arrive with detail 0.
+          if (event.detail === 0) toggleTooth(id);
+        }}
         title={toothInfo?.nameVi || `Răng ${id}`}
-        className={`relative flex flex-col items-center justify-center transition-all ${
+        className={`relative flex flex-col items-center justify-center select-none touch-pan-y transition-all ${
           compact ? 'w-7 h-9 text-[10px]' : 'w-8 sm:w-9 h-11 sm:h-12 text-xs'
         } rounded-md font-semibold border ${
           isSelected
@@ -106,9 +188,16 @@ export const FdiTeethPicker: React.FC<FdiTeethPickerProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4">
+    <div
+      ref={pickerRef}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onLostPointerCapture={finishDrag}
+      className={`rounded-xl border border-slate-200 bg-slate-50/80 ${compact ? 'p-2' : 'p-3 sm:p-4'}`}
+    >
       {/* Top quick-select actions */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200">
+      <div className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 ${compact ? 'pb-2 mb-2' : 'pb-3 mb-3'}`}>
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Sơ đồ răng FDI quốc tế:
@@ -160,7 +249,7 @@ export const FdiTeethPicker: React.FC<FdiTeethPickerProps> = ({
       </div>
 
       {/* Dental arch layout: Upper Arch */}
-      <div className="space-y-4">
+      <div className={compact ? 'space-y-2' : 'space-y-4'}>
         <div>
           <div className="flex justify-between items-center text-[11px] font-medium text-slate-400 px-1 mb-1">
             <span>Phải (R)</span>
@@ -218,7 +307,7 @@ export const FdiTeethPicker: React.FC<FdiTeethPickerProps> = ({
       </div>
 
       {/* Selected teeth readable preview */}
-      <div className="mt-3 pt-2.5 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-600">
+      <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-2.5'} border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-600`}>
         <span className="text-slate-500">Chỉ định phục hình:</span>
         <span className="font-mono font-medium text-slate-800 text-right truncate max-w-[280px] sm:max-w-md">
           {formatTeethList(selectedIds)}
