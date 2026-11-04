@@ -1,0 +1,274 @@
+{
+  "entities": {
+    "DentalOrder": {
+      "title": "DentalOrder",
+      "description": "Đơn hàng chế tác răng sứ và thẻ bảo hành chính hãng tại AT Dental Lab",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warrantyCode": { "type": "string", "maxLength": 64 },
+        "patientName": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "clinicName": { "type": "string", "maxLength": 250 },
+        "clinicAddress": { "type": "string", "maxLength": 300 },
+        "material": { "type": "string", "maxLength": 150 },
+        "warrantyPeriod": { "type": "string", "maxLength": 64 },
+        "warrantyYears": { "type": "number" },
+        "orderDate": { "type": "string", "maxLength": 32 },
+        "monthYear": { "type": "string", "maxLength": 16 },
+        "teeth": { "type": "string", "maxLength": 200 },
+        "teethCount": { "type": "number" },
+        "toothForm": { "type": "string", "maxLength": 150 },
+        "unitPrice": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "in_production", "completed", "delivered", "warranted"], "maxLength": 32 },
+        "paymentStatus": { "type": "string", "enum": ["unpaid", "partial", "paid"], "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "warrantyCode",
+        "patientName",
+        "phone",
+        "clinicName",
+        "clinicAddress",
+        "material",
+        "warrantyPeriod",
+        "warrantyYears",
+        "orderDate",
+        "monthYear",
+        "teeth",
+        "teethCount",
+        "toothForm",
+        "unitPrice",
+        "totalAmount",
+        "notes",
+        "status",
+        "paymentStatus",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DebtPaymentRecord": {
+      "title": "DebtPaymentRecord",
+      "description": "Phiếu thu thanh toán công nợ từ nha khoa đối tác",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clinicName": { "type": "string", "maxLength": 250 },
+        "amount": { "type": "number" },
+        "paymentDate": { "type": "string", "maxLength": 32 },
+        "monthYear": { "type": "string", "maxLength": 16 },
+        "method": { "type": "string", "enum": ["transfer", "cash"], "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "clinicName",
+        "amount",
+        "paymentDate",
+        "monthYear",
+        "method",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CashflowTransaction": {
+      "title": "CashflowTransaction",
+      "description": "Giao dịch sổ quỹ Thu - Chi vận hành Labo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["income", "expense"], "maxLength": 16 },
+        "category": { "type": "string", "maxLength": 150 },
+        "title": { "type": "string", "maxLength": 300 },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "maxLength": 32 },
+        "monthYear": { "type": "string", "maxLength": 16 },
+        "clinicName": { "type": "string", "maxLength": 250 },
+        "paymentMethod": { "type": "string", "enum": ["transfer", "cash"], "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "type",
+        "category",
+        "title",
+        "amount",
+        "date",
+        "monthYear",
+        "clinicName",
+        "paymentMethod",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DeliveryRecord": {
+      "title": "DeliveryRecord",
+      "description": "Chuyến giao nhận mẫu hàm và răng sứ với nha khoa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warrantyCode": { "type": "string", "maxLength": 64 },
+        "patientName": { "type": "string", "maxLength": 200 },
+        "clinicName": { "type": "string", "maxLength": 250 },
+        "clinicAddress": { "type": "string", "maxLength": 300 },
+        "deliveryDate": { "type": "string", "maxLength": 32 },
+        "monthYear": { "type": "string", "maxLength": 16 },
+        "direction": { "type": "string", "enum": ["pickup", "delivery", "both"], "maxLength": 32 },
+        "courierName": { "type": "string", "maxLength": 150 },
+        "shippingFee": { "type": "number" },
+        "payer": { "type": "string", "enum": ["lab", "clinic"], "maxLength": 32 },
+        "status": { "type": "string", "enum": ["pending", "shipping", "delivered", "returned"], "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "warrantyCode",
+        "patientName",
+        "clinicName",
+        "clinicAddress",
+        "deliveryDate",
+        "monthYear",
+        "direction",
+        "courierName",
+        "shippingFee",
+        "payer",
+        "status",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LabSetting": {
+      "title": "LabSetting",
+      "description": "Cấu hình thông tin Labo và bảng giá vật liệu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "labName": { "type": "string", "maxLength": 200 },
+        "tagline": { "type": "string", "maxLength": 300 },
+        "hotline": { "type": "string", "maxLength": 64 },
+        "address": { "type": "string", "maxLength": 300 },
+        "email": { "type": "string", "maxLength": 150 },
+        "bankName": { "type": "string", "maxLength": 150 },
+        "bankAccountNumber": { "type": "string", "maxLength": 64 },
+        "bankAccountHolder": { "type": "string", "maxLength": 150 },
+        "directorName": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "labName",
+        "tagline",
+        "hotline",
+        "address",
+        "email",
+        "bankName",
+        "bankAccountNumber",
+        "bankAccountHolder",
+        "directorName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "EmployeePayroll": {
+      "title": "EmployeePayroll",
+      "description": "Bảng lương nhân viên Labo (chỉ dành cho Admin quản trị, ẩn với Sale)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "monthYear": { "type": "string", "maxLength": 16 },
+        "employeeType": { "type": "string", "enum": ["sale", "custom"], "maxLength": 16 },
+        "saleUserId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 200 },
+        "employeeEmail": { "type": "string", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "position": { "type": "string", "maxLength": 150 },
+        "workDays": { "type": "number" },
+        "baseSalary": { "type": "number" },
+        "allowance": { "type": "number" },
+        "commissionAmount": { "type": "number" },
+        "bonus": { "type": "number" },
+        "deduction": { "type": "number" },
+        "netSalary": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["unpaid", "paid"], "maxLength": 16 },
+        "paymentDate": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "monthYear",
+        "employeeType",
+        "saleUserId",
+        "employeeName",
+        "employeeEmail",
+        "phone",
+        "position",
+        "workDays",
+        "baseSalary",
+        "allowance",
+        "commissionAmount",
+        "bonus",
+        "deduction",
+        "netSalary",
+        "paymentStatus",
+        "paymentDate",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/DentalOrder" },
+      "description": "Danh sách đơn hàng chế tác răng sứ và thẻ bảo hành"
+    },
+    "/debtPayments/{paymentId}": {
+      "schema": { "$ref": "#/entities/DebtPaymentRecord" },
+      "description": "Lịch sử thanh toán công nợ nha khoa"
+    },
+    "/cashflows/{txId}": {
+      "schema": { "$ref": "#/entities/CashflowTransaction" },
+      "description": "Sổ quỹ thu chi vận hành Labo"
+    },
+    "/deliveries/{deliveryId}": {
+      "schema": { "$ref": "#/entities/DeliveryRecord" },
+      "description": "Lịch sử giao nhận mẫu và răng sứ"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/LabSetting" },
+      "description": "Cấu hình hồ sơ Labo"
+    },
+    "/employeePayrolls/{payrollId}": {
+      "schema": { "$ref": "#/entities/EmployeePayroll" },
+      "description": "Bảng lương nhân viên Labo (chỉ Admin)"
+    }
+  }
+}

@@ -1,0 +1,175 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 2026 Futuristic Sapphire-Cyan-Indigo Accent Scale */
+  --color-teal-50: #eff6ff;
+  --color-teal-100: #dbeafe;
+  --color-teal-200: #bfdbfe;
+  --color-teal-300: #93c5fd;
+  --color-teal-400: #60a5fa;
+  --color-teal-500: #3b82f6;
+  --color-teal-600: #2563eb;
+  --color-teal-700: #1d4ed8;
+  --color-teal-800: #1e40af;
+  --color-teal-900: #1e3a8a;
+  --color-teal-950: #0f172a;
+}
+
+@layer base {
+  body {
+    font-family: 'Be Vietnam Pro', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.011em;
+    background-color: #f3f6fc;
+    background-image:
+      radial-gradient(at 10% 0%, rgba(56, 189, 248, 0.10) 0px, transparent 48%),
+      radial-gradient(at 90% 4%, rgba(99, 102, 241, 0.09) 0px, transparent 45%),
+      radial-gradient(at 50% 95%, rgba(16, 185, 129, 0.07) 0px, transparent 50%);
+    background-attachment: fixed;
+    color: #0f172a;
+  }
+
+  .dark body {
+    background-color: #060913;
+    background-image:
+      radial-gradient(at 12% 0%, rgba(37, 99, 235, 0.18) 0px, transparent 50%),
+      radial-gradient(at 88% 5%, rgba(6, 182, 212, 0.14) 0px, transparent 45%),
+      radial-gradient(at 50% 100%, rgba(139, 92, 246, 0.10) 0px, transparent 55%);
+    color: #f8fafc;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Space Grotesk', 'Be Vietnam Pro', system-ui, sans-serif;
+    letter-spacing: -0.025em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "zero" 1;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 2026 Spatial Glassmorphic Bento Card */
+.bento-card {
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    0 10px 30px -10px rgba(15, 23, 42, 0.05),
+    0 2px 6px -1px rgba(15, 23, 42, 0.03);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.bento-card:hover {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 1),
+    0 16px 36px -12px rgba(37, 99, 235, 0.08),
+    0 4px 10px -2px rgba(15, 23, 42, 0.04);
+}
+
+.dark .bento-card {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.07),
+    0 12px 32px -12px rgba(0, 0, 0, 0.5);
+}
+
+.dark .bento-card:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    0 16px 40px -12px rgba(37, 99, 235, 0.22);
+}
+
+/* Subtle Technical Dot Matrix inside Charts */
+.cyber-grid {
+  background-image: radial-gradient(rgba(148, 163, 184, 0.28) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.dark .cyber-grid {
+  background-image: radial-gradient(rgba(71, 85, 105, 0.32) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Futuristic Gradient Text */
+.text-gradient-future {
+  background: linear-gradient(135deg, #1d4ed8 0%, #0284c7 55%, #059669 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark .text-gradient-future {
+  background: linear-gradient(135deg, #60a5fa 0%, #38bdf8 55%, #34d399 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Subtle futuristic scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.65);
+}
+
+.quick-order-dock {
+  transform: translateY(calc(100% - 44px - env(safe-area-inset-bottom, 0px)));
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.quick-order-dock[data-expanded="true"] {
+  transform: translateY(0);
+}
+
+.quick-order-panel {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease, visibility 0s linear 220ms;
+}
+
+.quick-order-dock[data-expanded="true"] .quick-order-panel {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-order-dock,
+  .quick-order-panel {
+    transition: none;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+    background-image: none !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-card-break {
+    page-break-inside: avoid;
+  }
+}

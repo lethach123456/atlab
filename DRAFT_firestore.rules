@@ -1,0 +1,305 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == "lehoanghuythach@gmail.com"
+      );
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidDentalOrder(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'warrantyCode', 'patientName', 'phone',
+        'clinicName', 'clinicAddress', 'material', 'warrantyPeriod',
+        'warrantyYears', 'orderDate', 'monthYear', 'teeth', 'teethCount',
+        'toothForm', 'unitPrice', 'totalAmount', 'notes', 'status',
+        'paymentStatus', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'ownerId', 'warrantyCode', 'patientName', 'phone',
+        'clinicName', 'clinicAddress', 'material', 'warrantyPeriod',
+        'warrantyYears', 'orderDate', 'monthYear', 'teeth', 'teethCount',
+        'toothForm', 'unitPrice', 'totalAmount', 'notes', 'status',
+        'paymentStatus', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId == request.auth.uid &&
+      data.warrantyCode is string && data.warrantyCode.size() <= 64 &&
+      data.patientName is string && data.patientName.size() <= 200 &&
+      data.phone is string && data.phone.size() <= 50 &&
+      data.clinicName is string && data.clinicName.size() <= 250 &&
+      data.clinicAddress is string && data.clinicAddress.size() <= 300 &&
+      data.material is string && data.material.size() <= 150 &&
+      data.warrantyPeriod is string && data.warrantyPeriod.size() <= 64 &&
+      data.warrantyYears is number && data.warrantyYears >= 0 && data.warrantyYears <= 100 &&
+      data.orderDate is string && data.orderDate.size() <= 32 &&
+      data.monthYear is string && data.monthYear.size() <= 16 &&
+      data.teeth is string && data.teeth.size() <= 200 &&
+      data.teethCount is number && data.teethCount >= 1 && data.teethCount <= 64 &&
+      data.toothForm is string && data.toothForm.size() <= 150 &&
+      data.unitPrice is number && data.unitPrice >= 0 &&
+      data.totalAmount is number && data.totalAmount >= 0 &&
+      data.notes is string && data.notes.size() <= 1000 &&
+      data.status is string && data.status.size() <= 32 &&
+      data.status in ['pending', 'in_production', 'completed', 'delivered', 'warranted'] &&
+      data.paymentStatus is string && data.paymentStatus.size() <= 32 &&
+      data.paymentStatus in ['unpaid', 'partial', 'paid'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      data.updatedAt == request.time;
+    }
+
+    function isValidDebtPayment(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'clinicName', 'amount', 'paymentDate',
+        'monthYear', 'method', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'ownerId', 'clinicName', 'amount', 'paymentDate',
+        'monthYear', 'method', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId == request.auth.uid &&
+      data.clinicName is string && data.clinicName.size() <= 250 &&
+      data.amount is number && data.amount >= 0 &&
+      data.paymentDate is string && data.paymentDate.size() <= 32 &&
+      data.monthYear is string && data.monthYear.size() <= 16 &&
+      data.method is string && data.method.size() <= 32 &&
+      data.method in ['transfer', 'cash'] &&
+      data.notes is string && data.notes.size() <= 500 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      data.updatedAt == request.time;
+    }
+
+    function isValidCashflow(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'type', 'category', 'title', 'amount',
+        'date', 'monthYear', 'clinicName', 'paymentMethod', 'notes',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'ownerId', 'type', 'category', 'title', 'amount',
+        'date', 'monthYear', 'clinicName', 'paymentMethod', 'notes',
+        'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId == request.auth.uid &&
+      data.type is string && data.type.size() <= 16 &&
+      data.type in ['income', 'expense'] &&
+      data.category is string && data.category.size() <= 150 &&
+      data.title is string && data.title.size() <= 300 &&
+      data.amount is number && data.amount >= 0 &&
+      data.date is string && data.date.size() <= 32 &&
+      data.monthYear is string && data.monthYear.size() <= 16 &&
+      data.clinicName is string && data.clinicName.size() <= 250 &&
+      data.paymentMethod is string && data.paymentMethod.size() <= 32 &&
+      data.paymentMethod in ['transfer', 'cash'] &&
+      data.notes is string && data.notes.size() <= 500 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      data.updatedAt == request.time;
+    }
+
+    function isValidDelivery(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'warrantyCode', 'patientName', 'clinicName',
+        'clinicAddress', 'deliveryDate', 'monthYear', 'direction',
+        'courierName', 'shippingFee', 'payer', 'status', 'notes',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'ownerId', 'warrantyCode', 'patientName', 'clinicName',
+        'clinicAddress', 'deliveryDate', 'monthYear', 'direction',
+        'courierName', 'shippingFee', 'payer', 'status', 'notes',
+        'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId == request.auth.uid &&
+      data.warrantyCode is string && data.warrantyCode.size() <= 64 &&
+      data.patientName is string && data.patientName.size() <= 200 &&
+      data.clinicName is string && data.clinicName.size() <= 250 &&
+      data.clinicAddress is string && data.clinicAddress.size() <= 300 &&
+      data.deliveryDate is string && data.deliveryDate.size() <= 32 &&
+      data.monthYear is string && data.monthYear.size() <= 16 &&
+      data.direction is string && data.direction.size() <= 32 &&
+      data.direction in ['pickup', 'delivery', 'both'] &&
+      data.courierName is string && data.courierName.size() <= 150 &&
+      data.shippingFee is number && data.shippingFee >= 0 &&
+      data.payer is string && data.payer.size() <= 32 &&
+      data.payer in ['lab', 'clinic'] &&
+      data.status is string && data.status.size() <= 32 &&
+      data.status in ['pending', 'shipping', 'delivered', 'returned'] &&
+      data.notes is string && data.notes.size() <= 500 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      data.updatedAt == request.time;
+    }
+
+    function isValidLabSetting(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'labName', 'tagline', 'hotline', 'address',
+        'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder',
+        'directorName', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'ownerId', 'labName', 'tagline', 'hotline', 'address',
+        'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder',
+        'directorName', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId == request.auth.uid &&
+      data.labName is string && data.labName.size() <= 200 &&
+      data.tagline is string && data.tagline.size() <= 300 &&
+      data.hotline is string && data.hotline.size() <= 64 &&
+      data.address is string && data.address.size() <= 300 &&
+      data.email is string && data.email.size() <= 150 &&
+      data.bankName is string && data.bankName.size() <= 150 &&
+      data.bankAccountNumber is string && data.bankAccountNumber.size() <= 64 &&
+      data.bankAccountHolder is string && data.bankAccountHolder.size() <= 150 &&
+      data.directorName is string && data.directorName.size() <= 150 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      data.updatedAt == request.time;
+    }
+
+    // 4. Collection Match Blocks
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && request.auth.uid == adminId;
+      allow list, create, update, delete: if false;
+    }
+
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && isValidId(orderId) && (isOwner(existing().ownerId) || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(orderId) && orderId == incoming().id && isValidDentalOrder(incoming()) && incoming().createdAt == request.time;
+      allow update: if isSignedIn() && isValidId(orderId) && orderId == incoming().id && isValidDentalOrder(incoming()) &&
+        (isOwner(existing().ownerId) || isAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          (
+            existing().status != 'warranted' &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'warrantyCode', 'patientName', 'phone', 'clinicName', 'clinicAddress',
+              'material', 'warrantyPeriod', 'warrantyYears', 'orderDate', 'monthYear',
+              'teeth', 'teethCount', 'toothForm', 'unitPrice', 'totalAmount',
+              'notes', 'status', 'paymentStatus', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(orderId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    match /debtPayments/{paymentId} {
+      allow get: if isSignedIn() && isValidId(paymentId) && (isOwner(existing().ownerId) || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(paymentId) && paymentId == incoming().id && isValidDebtPayment(incoming()) && incoming().createdAt == request.time;
+      allow update: if isSignedIn() && isValidId(paymentId) && paymentId == incoming().id && isValidDebtPayment(incoming()) &&
+        (isOwner(existing().ownerId) || isAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'clinicName', 'amount', 'paymentDate', 'monthYear', 'method', 'notes', 'updatedAt'
+          ])
+        );
+      allow delete: if isSignedIn() && isValidId(paymentId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    match /cashflows/{txId} {
+      allow get: if isSignedIn() && isValidId(txId) && (isOwner(existing().ownerId) || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(txId) && txId == incoming().id && isValidCashflow(incoming()) && incoming().createdAt == request.time;
+      allow update: if isSignedIn() && isValidId(txId) && txId == incoming().id && isValidCashflow(incoming()) &&
+        (isOwner(existing().ownerId) || isAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'category', 'title', 'amount', 'date', 'monthYear',
+            'clinicName', 'paymentMethod', 'notes', 'updatedAt'
+          ])
+        );
+      allow delete: if isSignedIn() && isValidId(txId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    match /deliveries/{deliveryId} {
+      allow get: if isSignedIn() && isValidId(deliveryId) && (isOwner(existing().ownerId) || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(deliveryId) && deliveryId == incoming().id && isValidDelivery(incoming()) && incoming().createdAt == request.time;
+      allow update: if isSignedIn() && isValidId(deliveryId) && deliveryId == incoming().id && isValidDelivery(incoming()) &&
+        (isOwner(existing().ownerId) || isAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          (
+            existing().status != 'returned' &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'warrantyCode', 'patientName', 'clinicName', 'clinicAddress',
+              'deliveryDate', 'monthYear', 'direction', 'courierName',
+              'shippingFee', 'payer', 'status', 'notes', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(deliveryId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    match /settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && (isOwner(existing().ownerId) || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(settingId) && settingId == incoming().id && isValidLabSetting(incoming()) && incoming().createdAt == request.time;
+      allow update: if isSignedIn() && isValidId(settingId) && settingId == incoming().id && isValidLabSetting(incoming()) &&
+        (isOwner(existing().ownerId) || isAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'labName', 'tagline', 'hotline', 'address', 'email',
+            'bankName', 'bankAccountNumber', 'bankAccountHolder',
+            'directorName', 'updatedAt'
+          ])
+        );
+      allow delete: if isSignedIn() && isValidId(settingId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+  }
+}

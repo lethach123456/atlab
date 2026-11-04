@@ -1,0 +1,6 @@
+{
+  "name": "AT Dental Lab - Quản Lý Labo Nha Khoa",
+  "description": "Hệ thống quản lý đơn hàng phục hình, đối tác nha khoa và tra cứu bảo hành điện tử cho Labo Nha Khoa AT Dental Lab",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
