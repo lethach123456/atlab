@@ -352,7 +352,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     setFillRange(null);
     const low = Math.min(start, end);
     const high = Math.max(start, end);
-    if (low === high || !value) return;
+    if (low === high) return;
     for (let index = low; index <= high; index += 1) {
       if (index !== start) saveCell(currentOrders[index], field, value, false);
     }
