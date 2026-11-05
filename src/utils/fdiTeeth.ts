@@ -185,5 +185,19 @@ export function formatTeethList(toothIds: number[]): string {
   if (!toothIds || toothIds.length === 0) return 'Chưa chỉ định';
   if (toothIds.length >= 24) return 'Toàn hàm';
 
-  return toothIds.sort((a, b) => a - b).join(', ');
+  const sorted = [...new Set(toothIds)].sort((a, b) => a - b);
+  const groups: string[] = [];
+  let start = sorted[0];
+  let end = start;
+
+  for (const id of sorted.slice(1)) {
+    if (Math.floor(id / 10) === Math.floor(end / 10) && id === end + 1) {
+      end = id;
+      continue;
+    }
+    groups.push(start === end ? String(start) : `${start}-${end}`);
+    start = end = id;
+  }
+  groups.push(start === end ? String(start) : `${start}-${end}`);
+  return groups.join(', ');
 }
