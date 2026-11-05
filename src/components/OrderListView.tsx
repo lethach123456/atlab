@@ -103,6 +103,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const [editError, setEditError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<boolean>(false);
+  const [fillRange, setFillRange] = useState<{ field: EditableField; start: number; end: number } | null>(null);
+  const fillDrag = useRef<{ pointerId: number; field: EditableField; source: DentalOrder; start: number; end: number; value: string } | null>(null);
 
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
@@ -319,6 +321,41 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
 
     onUpdateOrder({ ...order, ...changes });
     finish();
+  };
+
+  const startFill = (event: React.PointerEvent<HTMLButtonElement>, order: DentalOrder, field: EditableField) => {
+    event.preventDefault();
+    const start = currentOrders.findIndex((item) => item.id === order.id);
+    if (start < 0) return;
+    fillDrag.current = { pointerId: event.pointerId, field, source: order, start, end: start, value: String(order[field] ?? '') };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setFillRange({ field, start, end: start });
+  };
+
+  const moveFill = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = fillDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLTableRowElement>('tr[data-order-id]');
+    const targetId = row?.dataset.orderId;
+    const end = targetId ? currentOrders.findIndex((item) => item.id === targetId) : -1;
+    if (end >= 0 && end !== drag.end) {
+      drag.end = end;
+      setFillRange({ field: drag.field, start: drag.start, end });
+    }
+  };
+
+  const finishFill = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = fillDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const { start, end, field, source, value } = drag;
+    fillDrag.current = null;
+    setFillRange(null);
+    const low = Math.min(start, end);
+    const high = Math.max(start, end);
+    if (low === high || !value) return;
+    for (let index = low; index <= high; index += 1) {
+      if (index !== start) saveCell(currentOrders[index], field, value, false);
+    }
   };
 
   const renderCellEditor = (order: DentalOrder, field: EditableField, label: string, secondary = false) => {
@@ -597,7 +634,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
             {editError}
           </p>
         )}
-        <div ref={tableScrollRef} className="overflow-x-auto">
+        <div ref={tableScrollRef} className="overflow-x-auto" onPointerMove={moveFill} onPointerUp={finishFill} onPointerCancel={finishFill}>
           <table ref={tableRef} className="w-full text-left text-xs">
             <thead className="bg-slate-50 dark:bg-slate-950/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[10px]">
               <tr>
@@ -639,6 +676,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                 return (
                   <tr
                     key={order.id}
+                    data-order-id={order.id}
                     className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
                       isChecked ? 'bg-teal-500/10' : ''
                     }`}
@@ -652,8 +690,11 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                       />
                     </td>
                     {orderColumns.map(({ field, label }) => (
-                      <td key={field} className="max-w-48 px-1 py-1 text-slate-700 dark:text-slate-200">
-                        {renderCellEditor(order, field, label)}
+                      <td key={field} className={`max-w-48 px-1 py-1 text-slate-700 dark:text-slate-200 ${fillRange?.field === field && currentOrders.findIndex((item) => item.id === order.id) >= Math.min(fillRange.start, fillRange.end) && currentOrders.findIndex((item) => item.id === order.id) <= Math.max(fillRange.start, fillRange.end) ? 'bg-teal-100/70 dark:bg-teal-900/30' : ''}`}>
+                        <div className="group/fill relative">
+                          {renderCellEditor(order, field, label)}
+                          {!readOnly && <button type="button" aria-label={`Kéo để sao chép ${label}`} title="Kéo để sao chép xuống" onPointerDown={(event) => startFill(event, order, field)} className="absolute bottom-0 right-0 z-10 size-3 cursor-crosshair touch-none rounded-sm border border-white bg-teal-600 opacity-0 shadow-sm group-hover/fill:opacity-100 focus-visible:opacity-100" />}
+                        </div>
                         {field === 'patientName' && (order.phone || editingCell?.field === 'phone' && editingCell.id === order.id) &&
                           renderCellEditor(order, 'phone', 'Số điện thoại', true)}
                       </td>
