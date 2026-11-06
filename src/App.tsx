@@ -89,8 +89,8 @@ function loadNavigationSession(key: string, isAdmin: boolean): { activeTab: NavT
   try {
     const saved = JSON.parse(localStorage.getItem(key) || 'null');
     const tabs: NavTab[] = ['dashboard', 'revenue', 'orders', 'debt', 'cashflow', 'delivery', 'profit', 'payroll', 'settings'];
-    const subTabs: SettingsSubTab[] = ['clinics', 'fdichart', 'materials', 'warranty', 'profile', 'users', 'commissions', 'payroll'];
-    const restrictedSubTab = !isAdmin && (saved?.settingsSubTab === 'users' || saved?.settingsSubTab === 'commissions' || saved?.settingsSubTab === 'payroll');
+    const subTabs: SettingsSubTab[] = ['clinics', 'fdichart', 'materials', 'warranty', 'profile', 'users', 'commissions', 'payroll', 'history'];
+    const restrictedSubTab = !isAdmin && (saved?.settingsSubTab === 'users' || saved?.settingsSubTab === 'commissions' || saved?.settingsSubTab === 'payroll' || saved?.settingsSubTab === 'history');
     const restrictedMainTab = !isAdmin && (saved?.activeTab === 'payroll' || saved?.activeTab === 'profit');
     return {
       activeTab: tabs.includes(saved?.activeTab) && !restrictedMainTab ? saved.activeTab : fallback.activeTab,
@@ -186,7 +186,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
   useEffect(() => {
     if (profile.role !== 'admin') {
-      if (settingsSubTab === 'users' || settingsSubTab === 'commissions' || settingsSubTab === 'payroll') {
+      if (settingsSubTab === 'users' || settingsSubTab === 'commissions' || settingsSubTab === 'payroll' || settingsSubTab === 'history') {
         setSettingsSubTab('clinics');
       }
       if (activeTab === 'payroll' || activeTab === 'profit') {
@@ -1068,7 +1068,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 loading={payrollsLoading}
                 loadError={payrollsError}
                 onSave={(input, existingId) => savePayrollRecord(ownerId, input, existingId)}
-                onDelete={(id) => deletePayrollRecord(id)}
+                onDelete={(id) => deletePayrollRecord(id, ownerId)}
               />
             )}
 
@@ -1086,7 +1086,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                   loading: payrollsLoading,
                   loadError: payrollsError,
                   onSave: (input, existingId) => savePayrollRecord(ownerId, input, existingId),
-                  onDelete: (id) => deletePayrollRecord(id),
+                  onDelete: (id) => deletePayrollRecord(id, ownerId),
                 } : undefined}
                 commissions={profile.role === 'admin' ? {
                   records: commissions,
@@ -1112,6 +1112,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                     catch (error) { throw new Error(accountError(error)); }
                   },
                 } : undefined}
+                changeHistory={profile.role === 'admin' ? { ownerId } : undefined}
                 clinicPartners={clinicPartners}
                 onAddClinicPartner={addClinicPartner}
                 onUpdateClinicPartner={updateClinicPartner}

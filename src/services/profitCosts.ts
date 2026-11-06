@@ -1,5 +1,6 @@
 import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, Timestamp, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { addChangeHistoryToTransaction, plainRecord } from './changeHistory';
 import { debtMonthValue } from '../utils/debtLedger';
 import type { ProfitFixedExpense, ProfitFixedExpenseInput } from '../utils/profit';
 
@@ -42,10 +43,19 @@ export async function saveProfitFixedCost(ownerId: string, input: ProfitFixedExp
   try {
     await runTransaction(db, async (transaction) => {
       const current = await transaction.get(reference);
+      const before = current.exists() ? plainRecord(current.data()) : null;
+      const after = { id, ownerId, monthYear: input.monthYear, kind: input.kind, amount: input.amount };
       transaction.set(reference, {
-        id, ownerId, monthYear: input.monthYear, kind: input.kind, amount: input.amount,
+        ...after,
         createdAt: current.exists() ? current.data().createdAt : serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+      addChangeHistoryToTransaction(transaction, ownerId, {
+        action: before ? 'update' : 'create',
+        entityType: 'profitMonthlyCosts',
+        entityId: id,
+        before,
+        after,
       });
     });
   } catch {

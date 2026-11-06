@@ -1,15 +1,16 @@
 import {
   collection,
-  deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
-  setDoc,
   Timestamp,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { addChangeHistoryToBatch, plainRecord } from './changeHistory';
 import type { EmployeePayroll, EmployeePayrollInput } from '../types/payroll';
 
 function readTimestamp(val: unknown): number {
@@ -127,15 +128,41 @@ export async function savePayrollRecord(
   }
 
   try {
-    await setDoc(ref, payload, { merge: true });
+    const beforeSnap = existingId ? await getDoc(ref) : null;
+    const before = beforeSnap?.exists() ? plainRecord(beforeSnap.data()) : null;
+    const batch = writeBatch(db);
+    batch.set(ref, payload, { merge: true });
+    addChangeHistoryToBatch(batch, ownerId, {
+      action: existingId && before ? 'update' : 'create',
+      entityType: 'employeePayrolls',
+      entityId: id,
+      before: existingId ? before : null,
+      after: { ...payload, createdAt: undefined, updatedAt: undefined },
+    });
+    await batch.commit();
   } catch {
     throw new Error('Không lưu được bảng lương. Vui lòng thử lại.');
   }
 }
 
-export async function deletePayrollRecord(id: string): Promise<void> {
+export async function deletePayrollRecord(id: string, ownerId?: string): Promise<void> {
   try {
-    await deleteDoc(doc(db, 'employeePayrolls', id));
+    const ref = doc(db, 'employeePayrolls', id);
+    const snap = await getDoc(ref);
+    const before = snap.exists() ? plainRecord(snap.data()) : null;
+    const resolvedOwner = ownerId || String(before?.ownerId || '');
+    const batch = writeBatch(db);
+    batch.delete(ref);
+    if (resolvedOwner) {
+      addChangeHistoryToBatch(batch, resolvedOwner, {
+        action: 'delete',
+        entityType: 'employeePayrolls',
+        entityId: id,
+        before,
+        after: null,
+      });
+    }
+    await batch.commit();
   } catch {
     throw new Error('Không xóa được dòng lương này. Vui lòng thử lại.');
   }

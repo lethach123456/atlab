@@ -539,5 +539,93 @@ service cloud.firestore {
       allow delete: if isEditor(resource.data.ownerId);
     }
 
+
+    function validHistoryChangeItem(item) {
+      return item.keys().hasAll(['field', 'before', 'after']) &&
+        item.keys().hasOnly(['field', 'before', 'after']) &&
+        item.field is string && item.field.size() >= 1 && item.field.size() <= 64 &&
+        (item.before == null || (item.before is string && item.before.size() <= 400)) &&
+        (item.after == null || (item.after is string && item.after.size() <= 400));
+    }
+
+    function validHistoryChangesList(list) {
+      return list is list && list.size() <= 40 &&
+        (list.size() == 0 || validHistoryChangeItem(list[0])) &&
+        (list.size() < 2 || validHistoryChangeItem(list[1])) &&
+        (list.size() < 3 || validHistoryChangeItem(list[2])) &&
+        (list.size() < 4 || validHistoryChangeItem(list[3])) &&
+        (list.size() < 5 || validHistoryChangeItem(list[4])) &&
+        (list.size() < 6 || validHistoryChangeItem(list[5])) &&
+        (list.size() < 7 || validHistoryChangeItem(list[6])) &&
+        (list.size() < 8 || validHistoryChangeItem(list[7])) &&
+        (list.size() < 9 || validHistoryChangeItem(list[8])) &&
+        (list.size() < 10 || validHistoryChangeItem(list[9])) &&
+        (list.size() < 11 || validHistoryChangeItem(list[10])) &&
+        (list.size() < 12 || validHistoryChangeItem(list[11])) &&
+        (list.size() < 13 || validHistoryChangeItem(list[12])) &&
+        (list.size() < 14 || validHistoryChangeItem(list[13])) &&
+        (list.size() < 15 || validHistoryChangeItem(list[14])) &&
+        (list.size() < 16 || validHistoryChangeItem(list[15])) &&
+        (list.size() < 17 || validHistoryChangeItem(list[16])) &&
+        (list.size() < 18 || validHistoryChangeItem(list[17])) &&
+        (list.size() < 19 || validHistoryChangeItem(list[18])) &&
+        (list.size() < 20 || validHistoryChangeItem(list[19])) &&
+        (list.size() < 21 || validHistoryChangeItem(list[20])) &&
+        (list.size() < 22 || validHistoryChangeItem(list[21])) &&
+        (list.size() < 23 || validHistoryChangeItem(list[22])) &&
+        (list.size() < 24 || validHistoryChangeItem(list[23])) &&
+        (list.size() < 25 || validHistoryChangeItem(list[24])) &&
+        (list.size() < 26 || validHistoryChangeItem(list[25])) &&
+        (list.size() < 27 || validHistoryChangeItem(list[26])) &&
+        (list.size() < 28 || validHistoryChangeItem(list[27])) &&
+        (list.size() < 29 || validHistoryChangeItem(list[28])) &&
+        (list.size() < 30 || validHistoryChangeItem(list[29])) &&
+        (list.size() < 31 || validHistoryChangeItem(list[30])) &&
+        (list.size() < 32 || validHistoryChangeItem(list[31])) &&
+        (list.size() < 33 || validHistoryChangeItem(list[32])) &&
+        (list.size() < 34 || validHistoryChangeItem(list[33])) &&
+        (list.size() < 35 || validHistoryChangeItem(list[34])) &&
+        (list.size() < 36 || validHistoryChangeItem(list[35])) &&
+        (list.size() < 37 || validHistoryChangeItem(list[36])) &&
+        (list.size() < 38 || validHistoryChangeItem(list[37])) &&
+        (list.size() < 39 || validHistoryChangeItem(list[38])) &&
+        (list.size() < 40 || validHistoryChangeItem(list[39]));
+    }
+
+    function isValidChangeHistory(data, documentId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'actorUid', 'actorEmail', 'actorName',
+          'action', 'entityType', 'entityId', 'entityLabel', 'summary',
+          'changes', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'actorUid', 'actorEmail', 'actorName',
+          'action', 'entityType', 'entityId', 'entityLabel', 'summary',
+          'changes', 'createdAt'
+        ]) &&
+        data.id == documentId && isValidId(documentId) &&
+        data.ownerId is string && isValidId(data.ownerId) &&
+        isOwner(data.ownerId) &&
+        data.actorUid == request.auth.uid &&
+        data.actorEmail is string && data.actorEmail.size() <= 254 &&
+        data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 200 &&
+        data.action in ['create', 'update', 'delete'] &&
+        data.entityType is string && data.entityType.size() >= 1 && data.entityType.size() <= 64 &&
+        data.entityId is string && data.entityId.size() >= 1 && data.entityId.size() <= 128 &&
+        data.entityLabel is string && data.entityLabel.size() <= 300 &&
+        data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 400 &&
+        validHistoryChangesList(data.changes) &&
+        data.createdAt is timestamp && data.createdAt == request.time;
+    }
+
+    // Append-only audit trail. Editors may create (same batch as business writes).
+    // Only workspace admins may read. No update/delete.
+    match /changeHistory/{historyId} {
+      allow get: if isAdmin() && (resource == null || isOwner(resource.data.ownerId));
+      allow list: if isAdmin() && isOwner(resource.data.ownerId);
+      allow create: if isEditor(incoming().ownerId) && isValidChangeHistory(incoming(), historyId);
+      allow update, delete: if false;
+    }
+
   }
 }

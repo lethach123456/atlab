@@ -26,6 +26,7 @@ import { WarrantyLookupView } from './WarrantyLookupView';
 import { SaleCommissionsView } from './SaleCommissionsView';
 import { UserManagementView } from './UserManagementView';
 import { PayrollView } from './PayrollView';
+import { ChangeHistoryView } from './ChangeHistoryView';
 import {
   Building2,
   Stethoscope,
@@ -39,11 +40,12 @@ import {
   Users,
   Percent,
   BadgeDollarSign,
+  History as HistoryIcon,
   Plus,
   Trash2,
 } from 'lucide-react';
 
-export type SettingsSubTab = 'clinics' | 'fdichart' | 'materials' | 'warranty' | 'profile' | 'users' | 'commissions' | 'payroll';
+export type SettingsSubTab = 'clinics' | 'fdichart' | 'materials' | 'warranty' | 'profile' | 'users' | 'commissions' | 'payroll' | 'history';
 
 
 interface SettingsViewProps {
@@ -53,6 +55,7 @@ interface SettingsViewProps {
   payroll?: React.ComponentProps<typeof PayrollView>;
   commissions?: React.ComponentProps<typeof SaleCommissionsView>;
   userManagement?: React.ComponentProps<typeof UserManagementView>;
+  changeHistory?: { ownerId: string };
   orders: DentalOrder[];
   clinicPartners: ClinicPartner[];
   onAddClinicPartner: (partner: ClinicPartner) => Promise<void>;
@@ -87,6 +90,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   payroll,
   userManagement,
   commissions,
+  changeHistory,
   orders,
   clinicPartners,
   onAddClinicPartner,
@@ -110,7 +114,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const restricted =
     (selectedSubTab === 'users' && !userManagement) ||
     (selectedSubTab === 'commissions' && !commissions) ||
-    (selectedSubTab === 'payroll' && !payroll);
+    (selectedSubTab === 'payroll' && !payroll) ||
+    (selectedSubTab === 'history' && !changeHistory);
   const subTab = restricted ? 'clinics' : selectedSubTab;
   const emptyBrandDraft = {
     brand: '',
@@ -441,6 +446,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     ...(payroll ? [{ id: 'payroll' as SettingsSubTab, label: 'Bảng lương nhân viên', icon: BadgeDollarSign }] : []),
     ...(commissions ? [{ id: 'commissions' as SettingsSubTab, label: 'Hoa hồng sale', icon: Percent }] : []),
     ...(userManagement ? [{ id: 'users' as SettingsSubTab, label: 'Người dùng', icon: Users }] : []),
+    ...(changeHistory ? [{ id: 'history' as SettingsSubTab, label: 'Lịch sử thay đổi', icon: HistoryIcon }] : []),
   ];
 
   return (
@@ -488,6 +494,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {subTab === 'commissions' && commissions && <SaleCommissionsView {...commissions} />}
 
       {subTab === 'users' && userManagement && <UserManagementView {...userManagement} />}
+
+      {subTab === 'history' && changeHistory && <ChangeHistoryView ownerId={changeHistory.ownerId} />}
 
       {subTab === 'clinics' && (
         <ClinicsView

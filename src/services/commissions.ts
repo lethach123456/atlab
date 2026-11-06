@@ -1,7 +1,7 @@
 import {
   collection,
-  deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   query,
   runTransaction,
@@ -10,6 +10,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { addChangeHistoryToBatch, addChangeHistoryToTransaction, plainRecord } from './changeHistory';
 import type { CommissionInput, SaleCommission } from '../types/commission';
 
 async function commissionId(ownerId: string, input: CommissionInput) {
@@ -54,15 +55,33 @@ export async function saveCommission(ownerId: string, input: CommissionInput, ex
         throw new Error('Cấu hình này đã bị xóa. Vui lòng tải lại danh sách.');
       }
       if (existingId) {
+        const before = previous.exists() ? plainRecord(previous.data()) : null;
         transaction.update(reference, { ratePercent: input.ratePercent, updatedAt: serverTimestamp() });
+        addChangeHistoryToTransaction(transaction, ownerId, {
+          action: 'update',
+          entityType: 'saleCommissions',
+          entityId: id,
+          before,
+          after: { ...(before || {}), ratePercent: input.ratePercent },
+        });
       } else {
-        transaction.set(reference, {
+        const after = {
           ...input,
           clinicName: input.clinicName.trim(),
           id,
           ownerId,
+        };
+        transaction.set(reference, {
+          ...after,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+        });
+        addChangeHistoryToTransaction(transaction, ownerId, {
+          action: 'create',
+          entityType: 'saleCommissions',
+          entityId: id,
+          before: null,
+          after,
         });
       }
     });
@@ -93,16 +112,24 @@ export async function saveCommissions(
   }));
   let created = 0;
   try {
-    for (let offset = 0; offset < records.length; offset += 400) {
+    for (let offset = 0; offset < records.length; offset += 200) {
       const chunk = records.slice(offset, offset + 400);
       created += await runTransaction(db, async (transaction) => {
         const snapshots = await Promise.all(chunk.map(({ reference }) => transaction.get(reference)));
         let added = 0;
         chunk.forEach(({ input, id, reference }, index) => {
           if (snapshots[index].exists()) return;
+          const after = { ...input, id, ownerId };
           transaction.set(reference, {
-            ...input, id, ownerId,
+            ...after,
             createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          });
+          addChangeHistoryToTransaction(transaction, ownerId, {
+            action: 'create',
+            entityType: 'saleCommissions',
+            entityId: id,
+            before: null,
+            after,
           });
           added++;
         });
@@ -120,7 +147,22 @@ export async function deleteCommission(id: string): Promise<void> {
     throw new Error('Mã cấu hình hoa hồng không hợp lệ.');
   }
   try {
-    await deleteDoc(doc(db, 'saleCommissions', id));
+    const reference = doc(db, 'saleCommissions', id);
+    const snap = await getDoc(reference);
+    const before = snap.exists() ? plainRecord(snap.data()) : null;
+    const ownerId = String(before?.ownerId || '');
+    const batch = writeBatch(db);
+    batch.delete(reference);
+    if (ownerId) {
+      addChangeHistoryToBatch(batch, ownerId, {
+        action: 'delete',
+        entityType: 'saleCommissions',
+        entityId: id,
+        before,
+        after: null,
+      });
+    }
+    await batch.commit();
   } catch {
     throw new Error('Không xóa được cấu hình hoa hồng. Vui lòng thử lại.');
   }
@@ -130,15 +172,30 @@ export async function deleteCommissions(ids: string[]): Promise<void> {
   const validIds = ids.filter((id) => id && /^[a-zA-Z0-9_-]{1,128}$/.test(id));
   if (validIds.length === 0) return;
   try {
-    for (let offset = 0; offset < validIds.length; offset += 400) {
+    for (let offset = 0; offset < validIds.length; offset += 200) {
+      const chunk = validIds.slice(offset, offset + 200);
+      const snaps = await Promise.all(chunk.map((id) => getDoc(doc(db, 'saleCommissions', id))));
       const batch = writeBatch(db);
-      for (const id of validIds.slice(offset, offset + 400)) {
+      chunk.forEach((id, index) => {
+        const snap = snaps[index];
+        const before = snap.exists() ? plainRecord(snap.data()) : null;
+        const ownerId = String(before?.ownerId || '');
         batch.delete(doc(db, 'saleCommissions', id));
-      }
+        if (ownerId) {
+          addChangeHistoryToBatch(batch, ownerId, {
+            action: 'delete',
+            entityType: 'saleCommissions',
+            entityId: id,
+            before,
+            after: null,
+          });
+        }
+      });
       await batch.commit();
     }
   } catch {
     throw new Error('Không xóa được các cấu hình hoa hồng đã chọn. Vui lòng thử lại.');
   }
 }
+
 

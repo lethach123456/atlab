@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -10,6 +11,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { addChangeHistoryToBatch, plainRecord } from './changeHistory';
 import { createClinicNameResolver } from '../utils/clinicPartners';
 import type {
   CashflowTransaction,
@@ -179,7 +181,7 @@ function writeRecord(change: WorkspaceChange, ownerId: string): DocumentData {
   return record;
 }
 
-/** Related changes within one chunk are committed atomically. */
+/** Related changes within one chunk are committed atomically (entity + history). */
 export async function commitWorkspaceChanges(
   ownerId: string,
   changes: WorkspaceChange[]
@@ -191,16 +193,56 @@ export async function commitWorkspaceChanges(
     }
   }
   try {
-    for (let offset = 0; offset < changes.length; offset += 450) {
+    // Each business write pairs with one history doc → keep chunks under the 500 op limit.
+    const chunkSize = 200;
+    for (let offset = 0; offset < changes.length; offset += chunkSize) {
+      const chunk = changes.slice(offset, offset + chunkSize);
+      const befores = await Promise.all(
+        chunk.map(async (change) => {
+          if (change.isNew && change.data !== undefined) return null;
+          try {
+            const snap = await getDoc(doc(db, change.collection, change.id));
+            return plainRecord(snap.exists() ? snap.data() : null);
+          } catch {
+            return null;
+          }
+        })
+      );
+
       const batch = writeBatch(db);
-      for (const change of changes.slice(offset, offset + 450)) {
+      chunk.forEach((change, index) => {
         const reference = doc(db, change.collection, change.id);
+        const before = befores[index];
         if (change.data === undefined) {
           batch.delete(reference);
-        } else {
-          batch.set(reference, writeRecord(change, ownerId), { merge: true });
+          addChangeHistoryToBatch(batch, ownerId, {
+            action: 'delete',
+            entityType: change.collection,
+            entityId: change.id,
+            before,
+            after: null,
+          });
+          return;
         }
-      }
+
+        const action = change.isNew || !before ? 'create' : 'update';
+        const written = writeRecord(change, ownerId);
+        batch.set(reference, written, { merge: true });
+        const afterPlain: Record<string, unknown> = {
+          ...(before || {}),
+          ...Object.fromEntries(
+            Object.entries(change.data as Record<string, unknown>).filter(([, value]) => value !== undefined)
+          ),
+          id: change.id,
+        };
+        addChangeHistoryToBatch(batch, ownerId, {
+          action,
+          entityType: change.collection,
+          entityId: change.id,
+          before: action === 'create' ? null : before,
+          after: afterPlain,
+        });
+      });
       await batch.commit();
     }
   } catch (error) {

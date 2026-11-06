@@ -11,6 +11,7 @@ import {
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -20,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { auth, db } from '../lib/firebase';
+import { recordChangeHistoryBestEffort, plainRecord } from './changeHistory';
 import type { UpdateUserInput, UserProfile, UserRole } from '../types/user';
 
 export function accountError(error: unknown): string {
@@ -102,15 +104,26 @@ export async function createAccount(
     await setPersistence(secondaryAuth, inMemoryPersistence);
     const credential = await createUserWithEmailAndPassword(secondaryAuth, input.email.trim(), input.password);
     try {
-      await setDoc(doc(db, 'users', credential.user.uid), {
+      const profileDoc = {
         uid: credential.user.uid,
         email: credential.user.email,
         displayName: input.displayName.trim(),
         role: input.role,
         active: true,
         workspaceOwnerId: admin.workspaceOwnerId,
+      };
+      await setDoc(doc(db, 'users', credential.user.uid), {
+        ...profileDoc,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+      // Password is never written to history. History write is best-effort after profile create.
+      await recordChangeHistoryBestEffort(admin.workspaceOwnerId, {
+        action: 'create',
+        entityType: 'users',
+        entityId: credential.user.uid,
+        before: null,
+        after: profileDoc,
       });
     } catch (error) {
       await deleteUser(credential.user).catch(() => undefined);
@@ -132,7 +145,20 @@ export async function updateAccount(uid: string, { emailChange, ...changes }: Up
 
   if (Object.keys(changes).length > 0) {
     try {
-      await updateDoc(doc(db, 'users', uid), { ...changes, updatedAt: serverTimestamp() });
+      const ref = doc(db, 'users', uid);
+      const beforeSnap = await getDoc(ref);
+      const before = beforeSnap.exists() ? plainRecord(beforeSnap.data()) : null;
+      await updateDoc(ref, { ...changes, updatedAt: serverTimestamp() });
+      const ownerId = String(before?.workspaceOwnerId || auth.currentUser?.uid || '');
+      if (ownerId) {
+        await recordChangeHistoryBestEffort(ownerId, {
+          action: 'update',
+          entityType: 'users',
+          entityId: uid,
+          before,
+          after: { ...(before || {}), ...changes },
+        });
+      }
     } catch (error) {
       if (emailChange) throw { code: 'account/profile-update-after-email' };
       throw error;
