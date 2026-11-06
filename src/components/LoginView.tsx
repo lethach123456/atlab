@@ -71,12 +71,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
   const displayedError = error || localError;
   const fieldClass =
-    'min-h-12 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-950 pl-10 pr-3.5 text-base lg:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/15 disabled:opacity-60 transition-colors';
+    'min-h-12 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-950 pl-10 pr-3.5 text-base lg:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/15 disabled:opacity-60 transition-colors';
 
   return (
-    <main className="login-screen min-h-dvh w-full max-w-[100vw] overflow-x-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-center lg:p-6 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      <div className="mx-auto w-full max-w-[1360px] min-h-dvh lg:min-h-[780px] grid grid-cols-1 lg:grid-cols-12 bg-white dark:bg-slate-900 lg:rounded-3xl border-0 lg:border border-slate-200/90 dark:border-slate-800 shadow-none lg:shadow-[0_24px_60px_-15px_rgba(15,23,42,0.12)] overflow-hidden">
-        {/* Desktop-only marketing panel — hidden on mobile to cut clutter */}
+    <main className="login-screen relative isolate min-h-dvh w-full max-w-[100vw] overflow-x-hidden text-slate-900 dark:text-slate-100 flex flex-col justify-center lg:bg-slate-50 dark:lg:bg-slate-950 lg:p-6 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-0 lg:hidden overflow-hidden" aria-hidden="true">
+        <div className="login-screen__glow login-screen__glow--a" />
+        <div className="login-screen__glow login-screen__glow--b" />
+        <div className="login-screen__glow login-screen__glow--c" />
+        <div className="login-screen__grid" />
+      </div>
+
+      <div className="relative z-10 mx-auto w-full max-w-[1360px] min-h-dvh lg:min-h-[780px] grid grid-cols-1 lg:grid-cols-12 bg-transparent lg:bg-white dark:lg:bg-slate-900 lg:rounded-3xl border-0 lg:border border-slate-200/90 dark:border-slate-800 shadow-none lg:shadow-[0_24px_60px_-15px_rgba(15,23,42,0.12)] overflow-hidden">
+        {/* Desktop-only marketing panel */}
         <section className="hidden lg:flex lg:col-span-7 relative bg-slate-950 text-white p-8 sm:p-12 lg:p-14 flex-col justify-between overflow-hidden">
           <div className="pointer-events-none absolute inset-0 opacity-25 cyber-grid" aria-hidden="true" />
           <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full bg-blue-600/25 blur-3xl" aria-hidden="true" />
@@ -152,19 +159,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
           </div>
         </section>
 
-        {/* Auth form — primary surface on mobile */}
+        {/* Auth column */}
         <section
           aria-labelledby="login-heading"
-          className="lg:col-span-5 px-4 py-5 sm:p-10 lg:p-12 flex flex-col justify-between bg-white dark:bg-slate-900 min-h-dvh lg:min-h-0 overflow-y-auto"
+          className="lg:col-span-5 px-4 py-6 sm:px-8 sm:py-10 lg:p-12 flex flex-col justify-center lg:justify-between bg-transparent lg:bg-white dark:lg:bg-slate-900 min-h-dvh lg:min-h-0 overflow-y-auto"
         >
-          {/* Compact mobile brand */}
-          <div className="lg:hidden flex items-center gap-3 mb-2">
-            <BrandMark className="w-10 h-10" />
+          {/* Mobile brand over navy background */}
+          <div className="lg:hidden mb-5 flex flex-col items-center text-center gap-3">
+            <BrandMark className="w-12 h-12" />
             <div className="min-w-0">
-              <p className="font-display text-base font-bold tracking-tight text-slate-900 dark:text-white truncate">
+              <p className="font-display text-lg font-bold tracking-tight text-white">
                 AT Dental Lab
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Đăng nhập</p>
+              <p className="text-xs font-medium text-cyan-200/90 mt-0.5">Đăng nhập</p>
             </div>
           </div>
 
@@ -176,7 +183,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
             <span className="font-mono tabular-nums">AT-ERP</span>
           </div>
 
-          <div className="my-auto py-4 sm:py-8 w-full max-w-md mx-auto">
+          <div className="login-card my-auto w-full max-w-md mx-auto rounded-2xl border border-white/55 bg-white/95 p-5 shadow-[0_18px_50px_-18px_rgba(2,6,23,0.65),inset_0_1px_0_0_rgba(255,255,255,0.85)] backdrop-blur-md dark:border-slate-700/80 dark:bg-slate-900/95 dark:shadow-[0_18px_50px_-18px_rgba(0,0,0,0.7)] sm:p-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none dark:lg:bg-transparent">
             <div className="space-y-1.5">
               <h1
                 id="login-heading"
@@ -272,7 +279,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     onClick={() => setShowPassword((prev) => !prev)}
                     tabIndex={-1}
                     aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex min-h-12 min-w-12 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     {showPassword ? (
                       <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -337,15 +344,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
               </svg>
               <span>Google</span>
             </button>
+
+            <div className="mt-5 hidden lg:flex pt-3 border-t border-slate-100 dark:border-slate-800/80 items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden="true" />
+                Kết nối bảo mật
+              </span>
+              <span>© AT Dental Lab</span>
+            </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <span className="hidden sm:inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden="true" />
-              Kết nối bảo mật
-            </span>
-            <span className="sm:ml-auto">© AT Dental Lab</span>
-          </div>
+          <p className="lg:hidden mt-5 text-center text-[11px] font-medium text-white/55">
+            © AT Dental Lab
+          </p>
         </section>
       </div>
     </main>
