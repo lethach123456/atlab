@@ -1,7 +1,8 @@
 import { MonthFilter } from './MonthFilter';
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CashflowTransaction } from '../types/dental';
 import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financeUtils';
+import { formatSaveError, formSnapshot, reuseOrCreateStableId } from '../utils/reliableSave';
 import { PAYROLL_EXPENSE_CATEGORY, DELIVERY_EXPENSE_CATEGORY, PROFIT_EXPENSE_CATEGORIES } from '../utils/profit';
 import {
   ArrowUpRight,
@@ -18,8 +19,13 @@ interface CashflowViewProps {
   transactions: CashflowTransaction[];
   readOnly?: boolean;
   availableMonths: string[];
-  onAddTransaction: (tx: Omit<CashflowTransaction, 'id' | 'createdAt'>) => void;
-  onUpdateTransaction: (id: string, tx: Omit<CashflowTransaction, 'id' | 'createdAt'>) => void;
+  onAddTransaction: (
+    tx: Omit<CashflowTransaction, 'id' | 'createdAt'> & { id?: string }
+  ) => void | Promise<unknown>;
+  onUpdateTransaction: (
+    id: string,
+    tx: Omit<CashflowTransaction, 'id' | 'createdAt'>
+  ) => void | Promise<void>;
   onDeleteTransaction: (id: string) => void;
 }
 
@@ -78,6 +84,12 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   const [txClinicName, setTxClinicName] = useState('');
   const [newSpenderMode, setNewSpenderMode] = useState(false);
   const [newSpenderName, setNewSpenderName] = useState('');
+  const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [formError, setFormError] = useState('');
+  const savingRef = useRef(false);
+  const createIdRef = useRef<string | null>(null);
+  const baselineRef = useRef('');
+  const savedNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const knownSpenders = useMemo(() => {
     const names = new Set<string>();
@@ -87,6 +99,24 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'vi'));
   }, [transactions]);
+
+  const currentSnapshot = () =>
+    formSnapshot({
+      editingId: editingId || '',
+      txType,
+      txCategory,
+      txTitle,
+      txAmount,
+      txDate,
+      txMethod,
+      txNotes,
+      txSpender,
+      txClinicName,
+      newSpenderMode,
+      newSpenderName,
+    });
+
+  const isDirty = () => baselineRef.current !== '' && currentSnapshot() !== baselineRef.current;
 
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -155,11 +185,35 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     setTxClinicName('');
     setNewSpenderMode(false);
     setNewSpenderName('');
+    setFormError('');
+    setSavePhase('idle');
+    createIdRef.current = null;
+  };
+
+  const captureBaseline = (values: Record<string, string | number | boolean>) => {
+    baselineRef.current = formSnapshot(values);
   };
 
   const handleOpenModal = (defaultType: 'income' | 'expense') => {
     const targetMonth = selectedMonth === 'ALL' ? latestMonth : selectedMonth;
     resetForm(defaultType, targetMonth);
+    const amount = defaultType === 'income' ? 5000000 : 2500000;
+    const category = defaultType === 'income' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0];
+    const date = `20/${targetMonth}`;
+    captureBaseline({
+      editingId: '',
+      txType: defaultType,
+      txCategory: category,
+      txTitle: '',
+      txAmount: amount,
+      txDate: date,
+      txMethod: 'transfer',
+      txNotes: '',
+      txSpender: '',
+      txClinicName: '',
+      newSpenderMode: false,
+      newSpenderName: '',
+    });
     setModalOpen(true);
   };
 
@@ -167,17 +221,37 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     setEditingId(tx.id);
     setTxType(tx.type);
     const cats = tx.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-    setTxCategory(cats.includes(tx.category) ? tx.category : cats[0]);
+    const category = cats.includes(tx.category) ? tx.category : cats[0];
+    setTxCategory(category);
     setTxTitle(tx.title);
     setTxAmount(tx.amount);
-    setTxDate(tx.date || `01/${tx.monthYear}`);
-    setTxMethod(tx.paymentMethod || 'transfer');
+    const date = tx.date || `01/${tx.monthYear}`;
+    setTxDate(date);
+    const method = tx.paymentMethod || 'transfer';
+    setTxMethod(method);
     setTxNotes(tx.notes || '');
     const spender = (tx.spenderName || '').trim();
     setTxSpender(spender);
     setTxClinicName(tx.clinicName || '');
     setNewSpenderMode(false);
     setNewSpenderName('');
+    setFormError('');
+    setSavePhase('idle');
+    createIdRef.current = null;
+    captureBaseline({
+      editingId: tx.id,
+      txType: tx.type,
+      txCategory: category,
+      txTitle: tx.title,
+      txAmount: tx.amount,
+      txDate: date,
+      txMethod: method,
+      txNotes: tx.notes || '',
+      txSpender: spender,
+      txClinicName: tx.clinicName || '',
+      newSpenderMode: false,
+      newSpenderName: '',
+    });
     setModalOpen(true);
   };
 
@@ -187,11 +261,44 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     return txSpender.trim();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!txTitle.trim() || txAmount <= 0) return;
+  const requestCloseModal = () => {
+    if (savingRef.current) return;
+    if (isDirty()) {
+      const ok = window.confirm('Có thay đổi chưa lưu. Bạn có chắc muốn đóng và hủy?');
+      if (!ok) return;
+    }
+    setModalOpen(false);
+    setFormError('');
+    setSavePhase('idle');
+  };
 
-    const payload: TxPayload = {
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (savingRef.current || isDirty()) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [modalOpen, editingId, txType, txCategory, txTitle, txAmount, txDate, txMethod, txNotes, txSpender, txClinicName, newSpenderMode, newSpenderName]);
+
+  useEffect(() => {
+    return () => {
+      if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
+    };
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (savingRef.current) return;
+    if (!txTitle.trim() || txAmount <= 0) {
+      setFormError('Nhập diễn giải và số tiền hợp lệ.');
+      return;
+    }
+
+    const payload: TxPayload & { id?: string } = {
       type: txType,
       category: txCategory,
       title: txTitle.trim(),
@@ -204,9 +311,31 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       notes: txNotes.trim(),
     };
 
-    if (editingId) onUpdateTransaction(editingId, payload);
-    else onAddTransaction(payload);
-    setModalOpen(false);
+    savingRef.current = true;
+    setSavePhase('saving');
+    setFormError('');
+    try {
+      if (editingId) {
+        await onUpdateTransaction(editingId, payload);
+      } else {
+        createIdRef.current = reuseOrCreateStableId('cf', createIdRef.current);
+        payload.id = createIdRef.current;
+        await onAddTransaction(payload);
+      }
+      baselineRef.current = currentSnapshot();
+      setSavePhase('saved');
+      if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
+      savedNoticeTimerRef.current = setTimeout(() => {
+        savedNoticeTimerRef.current = null;
+        setModalOpen(false);
+        setSavePhase('idle');
+      }, 450);
+    } catch (cause) {
+      setSavePhase('idle');
+      setFormError(formatSaveError(cause));
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   return (
@@ -512,8 +641,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) requestCloseModal();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              requestCloseModal();
+            }
+          }}
+        >
+          <div role="dialog" aria-modal="true" className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3.5 bg-slate-950 text-white">
               <h3 className="font-bold text-sm">
                 {editingId
@@ -525,8 +665,11 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                     : 'Lập Phiếu Chi'}
               </h3>
               <button
-                onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-white cursor-pointer"
+                type="button"
+                aria-label="Đóng phiếu"
+                onClick={requestCloseModal}
+                disabled={savePhase === 'saving'}
+                className="text-slate-400 hover:text-white cursor-pointer disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -714,19 +857,42 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 </div>
               </div>
 
+              {(formError || savePhase === 'saved') && (
+                <div
+                  role="status"
+                  className={`rounded-lg px-3 py-2 text-xs ${
+                    formError
+                      ? 'border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200'
+                      : 'border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
+                  }`}
+                >
+                  {formError || 'Đã lưu'}
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-3.5 py-1.5 font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                  onClick={requestCloseModal}
+                  disabled={savePhase === 'saving'}
+                  className="px-3.5 py-1.5 font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer disabled:opacity-50"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg cursor-pointer"
+                  disabled={savePhase === 'saving' || savePhase === 'saved'}
+                  className="px-4 py-1.5 font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg cursor-pointer disabled:cursor-wait disabled:opacity-70"
                 >
-                  {editingId ? 'Cập Nhật' : 'Lưu Phiếu'}
+                  {savePhase === 'saving'
+                    ? 'Đang lưu…'
+                    : formError
+                      ? 'Thử lại'
+                      : savePhase === 'saved'
+                        ? 'Đã lưu'
+                        : editingId
+                          ? 'Cập Nhật'
+                          : 'Lưu Phiếu'}
                 </button>
               </div>
             </form>

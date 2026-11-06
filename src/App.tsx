@@ -73,6 +73,7 @@ import type { EmployeePayroll } from './types/payroll';
 import { subscribePayrolls, savePayrollRecord, deletePayrollRecord } from './services/payrolls';
 import { accountError, createAccount, subscribeUsers, updateAccount } from './services/userAccounts';
 import { commitWorkspaceChanges, saveWorkspaceRecord, deleteWorkspaceRecord, subscribeWorkspaceData, WorkspaceChange } from './services/workspaceData';
+import { formatSaveError, newStableId } from './utils/reliableSave';
 
 export default function App() {
   return <AuthGate>{(profile) => <Workspace key={profile.uid} profile={profile} />}</AuthGate>;
@@ -144,9 +145,24 @@ function Workspace({ profile }: { profile: UserProfile }) {
     setPendingWrites((count) => count + 1);
     setSyncError('');
     void action.catch((error) => {
-      setSyncError(error.message);
+      setSyncError(formatSaveError(error));
       setRefresh((value) => value + 1);
     }).finally(() => setPendingWrites((count) => count - 1));
+  }
+
+  async function writeAwaited(action: Promise<void>): Promise<void> {
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
+    setPendingWrites((count) => count + 1);
+    setSyncError('');
+    try {
+      await action;
+    } catch (error) {
+      const message = formatSaveError(error);
+      setSyncError(message);
+      throw new Error(message);
+    } finally {
+      setPendingWrites((count) => count - 1);
+    }
   }
 
 
@@ -437,8 +453,8 @@ function Workspace({ profile }: { profile: UserProfile }) {
     resolveMaterialPricesForClinic(clinicName, materialPrices, clinicMaterialPrices);
 
   // Order CRUD
-  const handleSaveOrder = (orderData: Partial<DentalOrder>) => {
-    if (isReadOnly) return;
+  const handleSaveOrder = async (orderData: Partial<DentalOrder>) => {
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
     if (editingOrder && editingOrder.id) {
       const clinicName = orderData.clinicName ?? editingOrder.clinicName;
       const material = orderData.material ?? editingOrder.material;
@@ -469,29 +485,34 @@ function Workspace({ profile }: { profile: UserProfile }) {
       const patch = changedFields(editingOrder, updated);
       const current = orders.find((order) => order.id === updated.id);
       if (!current) {
-        setSyncError('Đơn hàng này đã bị xóa.');
-        setEditingOrder(null);
-        return;
+        throw new Error('Đơn hàng này đã bị xóa.');
+      }
+      if (Object.keys(patch).length) {
+        await writeAwaited(saveWorkspaceRecord('orders', updated.id, patch, ownerId));
       }
       const newList = updateOrder({ ...current, ...patch }, orders);
       setOrders(newList);
-      if (Object.keys(patch).length) write(saveWorkspaceRecord('orders', updated.id, patch, ownerId));
-    } else {
-      const priced = applyCatalogPricesToOrderData(
-        orderData,
-        pricesForOrderClinic(orderData.clinicName || '')
-      );
-      const { newOrder, updatedOrders } = createOrder(
-        priced,
-        orders,
-        pricesForOrderClinic(orderData.clinicName || '')
-      );
-      setOrders(updatedOrders);
-      setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
-      setWarrantyModalOrder(newOrder);
-      write(saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true));
-
+      setEditingOrder(null);
+      return;
     }
+
+    const priced = applyCatalogPricesToOrderData(
+      orderData,
+      pricesForOrderClinic(orderData.clinicName || '')
+    );
+    const stableId =
+      (orderData.id && /^[a-zA-Z0-9_-]{1,128}$/.test(orderData.id) && orderData.id) ||
+      newStableId('order');
+    const { newOrder } = createOrder(
+      { ...priced, id: stableId },
+      orders,
+      pricesForOrderClinic(orderData.clinicName || ''),
+      { persistLocal: false }
+    );
+    await writeAwaited(saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true));
+    setOrders((current) => (current.some(({ id }) => id === newOrder.id) ? current : [newOrder, ...current]));
+    setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
+    setWarrantyModalOrder(newOrder);
     setEditingOrder(null);
   };
 
@@ -501,25 +522,28 @@ function Workspace({ profile }: { profile: UserProfile }) {
       data,
       pricesForOrderClinic(data.clinicName || '')
     );
+    const stableId =
+      (data.id && /^[a-zA-Z0-9_-]{1,128}$/.test(data.id) && data.id) || newStableId('order');
     const { newOrder } = createOrder(
-      priced,
+      { ...priced, id: stableId },
       orders,
-      pricesForOrderClinic(data.clinicName || '')
+      pricesForOrderClinic(data.clinicName || ''),
+      { persistLocal: false }
     );
-    await saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true);
-    setOrders((current) => current.some(({ id }) => id === newOrder.id) ? current : [newOrder, ...current]);
+    await writeAwaited(saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true));
+    setOrders((current) => (current.some(({ id }) => id === newOrder.id) ? current : [newOrder, ...current]));
     setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
     return newOrder;
   };
 
-  const handleUpdateOrderDirect = (updated: DentalOrder) => {
-    if (isReadOnly) return;
+  const handleUpdateOrderDirect = async (updated: DentalOrder) => {
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
     const current = orders.find((order) => order.id === updated.id);
-    if (!current) return;
-    const newList = updateOrder(updated, orders);
-    setOrders(newList);
+    if (!current) throw new Error('Đơn hàng này đã bị xóa.');
     const patch = changedFields(current, updated);
-    if (Object.keys(patch).length) write(saveWorkspaceRecord('orders', updated.id, patch, ownerId));
+    if (!Object.keys(patch).length) return;
+    await writeAwaited(saveWorkspaceRecord('orders', updated.id, patch, ownerId));
+    setOrders(updateOrder({ ...current, ...patch }, orders));
   };
 
   const handleDeleteOrder = (id: string) => {
@@ -595,32 +619,35 @@ function Workspace({ profile }: { profile: UserProfile }) {
   };
 
   // Cashflow CRUD
-  const handleAddCashflow = (
-    txData: Omit<CashflowTransaction, 'id' | 'createdAt'>
+  const handleAddCashflow = async (
+    txData: Omit<CashflowTransaction, 'id' | 'createdAt'> & { id?: string }
   ) => {
-    if (isReadOnly) return;
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
+    const id =
+      (txData.id && /^[a-zA-Z0-9_-]{1,128}$/.test(txData.id) && txData.id) ||
+      newStableId('cf');
     const newTx: CashflowTransaction = {
       ...txData,
       clinicName: txData.clinicName || '',
       spenderName: txData.type === 'expense' ? (txData.spenderName || '').trim() : '',
       notes: txData.notes || '',
-      id: `cf_${Date.now()}`,
+      id,
       createdAt: Date.now(),
     };
-    const next = [newTx, ...cashflows];
+    await writeAwaited(saveWorkspaceRecord('cashflows', newTx.id, newTx, ownerId, true));
+    const next = [newTx, ...cashflows.filter((row) => row.id !== newTx.id)];
     setCashflows(next);
     saveCashflows(next);
-    write(saveWorkspaceRecord('cashflows', newTx.id, newTx, ownerId, true));
-
+    return newTx;
   };
 
-  const handleUpdateCashflow = (
+  const handleUpdateCashflow = async (
     id: string,
     txData: Omit<CashflowTransaction, 'id' | 'createdAt'>
   ) => {
-    if (isReadOnly) return;
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
     const existing = cashflows.find((t) => t.id === id);
-    if (!existing) return;
+    if (!existing) throw new Error('Phiếu thu/chi này đã bị xóa.');
     const updated: CashflowTransaction = {
       ...existing,
       ...txData,
@@ -628,10 +655,10 @@ function Workspace({ profile }: { profile: UserProfile }) {
       spenderName: txData.type === 'expense' ? (txData.spenderName || '').trim() : '',
       notes: txData.notes || '',
     };
+    await writeAwaited(saveWorkspaceRecord('cashflows', id, updated, ownerId, false));
     const next = cashflows.map((t) => (t.id === id ? updated : t));
     setCashflows(next);
     saveCashflows(next);
-    write(saveWorkspaceRecord('cashflows', id, updated, ownerId, false));
   };
 
   const handleDeleteCashflow = (id: string) => {

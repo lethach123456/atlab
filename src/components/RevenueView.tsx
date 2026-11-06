@@ -23,7 +23,7 @@ interface RevenueViewProps {
   readOnly?: boolean;
   initialMonth?: string;
   initialClinic?: string;
-  onUpdateOrder: (updated: DentalOrder) => void;
+  onUpdateOrder: (updated: DentalOrder) => void | Promise<void>;
   onExportInvoicePdf: (orders: DentalOrder[], clinicName: string, monthYear: string) => void;
   onViewWarranty: (order: DentalOrder) => void;
 }
@@ -194,9 +194,13 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
   const handleSaveTotalAmount = (order: DentalOrder, rawValue?: string) => {
     const str = rawValue !== undefined ? rawValue : tempTotalAmount;
     const numeric = Math.max(0, Number(String(str).replace(/[^0-9]/g, '')) || 0);
-    onUpdateOrder({
-      ...order,
-      totalAmount: numeric,
+    void Promise.resolve(
+      onUpdateOrder({
+        ...order,
+        totalAmount: numeric,
+      })
+    ).catch(() => {
+      /* sync banner in App; keep editor closed only after attempt */
     });
     setEditingTotalId(null);
   };
@@ -211,7 +215,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
     }
     setQuantityError('');
     setEditingQuantityId(null);
-    if (count !== order.teethCount) onUpdateOrder({ ...order, teethCount: count });
+    if (count !== order.teethCount) void Promise.resolve(onUpdateOrder({ ...order, teethCount: count }));
   };
 
   return (

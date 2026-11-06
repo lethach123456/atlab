@@ -7,12 +7,13 @@ import {
   getUnitPriceForMaterial,
   resolveMaterialPricesForClinic,
 } from '../utils/financeUtils';
+import { formatSaveError, formSnapshot, reuseOrCreateStableId } from '../utils/reliableSave';
 import { X, Save, Sparkles, Building2, User, Phone, Calendar, ShieldCheck, FileText } from 'lucide-react';
 
 interface OrderFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (orderData: Partial<DentalOrder>) => void;
+  onSave: (orderData: Partial<DentalOrder>) => void | Promise<void>;
   initialOrder?: DentalOrder | null;
   clinicOptions: { name: string; address: string }[];
   materialPrices?: MaterialPriceConfig[];
@@ -77,6 +78,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<DentalOrder['status']>('');
   const [formError, setFormError] = useState('');
+  const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
 
   const lastSuggestionRef = useRef(0);
@@ -85,7 +87,30 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const hydrateGenRef = useRef(0);
   const skipAutofillGenRef = useRef(0);
   const pendingAmountRef = useRef(0);
+  const savingRef = useRef(false);
+  const createIdRef = useRef<string | null>(null);
+  const baselineRef = useRef('');
+  const savedNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   totalAmountRef.current = totalAmountInput;
+
+  const currentSnapshot = () =>
+    formSnapshot({
+      warrantyCode,
+      patientName,
+      phone,
+      clinicName,
+      material,
+      warrantyPeriod,
+      orderDate,
+      teethText,
+      teethCountInput,
+      totalAmountInput,
+      toothForm,
+      notes,
+      status,
+    });
+
+  const isDirty = () => baselineRef.current !== '' && currentSnapshot() !== baselineRef.current;
 
   const catalogForClinic = useMemo(
     () => resolveMaterialPricesForClinic(clinicName, materialPrices, clinicMaterialPrices),
@@ -124,63 +149,105 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setFormError('');
+    setSavePhase('idle');
+    savingRef.current = false;
     setShowSuggestedBadge(false);
     lastSuggestionRef.current = 0;
     if (badgeTimerRef.current) {
       clearTimeout(badgeTimerRef.current);
       badgeTimerRef.current = null;
     }
+    if (savedNoticeTimerRef.current) {
+      clearTimeout(savedNoticeTimerRef.current);
+      savedNoticeTimerRef.current = null;
+    }
     // Skip one autofill pass so we don't overwrite hydrated amount with a stale suggestion.
     const gen = hydrateGenRef.current + 1;
     hydrateGenRef.current = gen;
     skipAutofillGenRef.current = gen;
 
+    let nextWarranty = '';
+    let nextPatient = '';
+    let nextPhone = '';
+    let nextClinic = '';
+    let nextMaterial = 'Full Zirconia';
+    let nextWarrantyPeriod = '15 năm';
+    let nextOrderDate = '';
+    let nextTeeth = '11-21';
+    let nextTeethCount = 2;
+    let nextAmount = 0;
+    let nextToothForm = '';
+    let nextNotes = '';
+    let nextStatus: DentalOrder['status'] = '';
+    let nextToothIds = [11, 21];
+
     if (initialOrder?.id) {
-      const amount = initialOrder.totalAmount || 0;
-      pendingAmountRef.current = amount;
-      setWarrantyCode(initialOrder.warrantyCode || '');
-      setPatientName(initialOrder.patientName || '');
-      setPhone(initialOrder.phone || '');
-      setClinicName(initialOrder.clinicName || '');
-      setMaterial(initialOrder.material || 'Full Zirconia');
-      setWarrantyPeriod(initialOrder.warrantyPeriod || '15 năm');
-      setOrderDate(initialOrder.orderDate || '');
-      setTeethText(initialOrder.teeth || '');
+      nextAmount = initialOrder.totalAmount || 0;
+      pendingAmountRef.current = nextAmount;
+      nextWarranty = initialOrder.warrantyCode || '';
+      nextPatient = initialOrder.patientName || '';
+      nextPhone = initialOrder.phone || '';
+      nextClinic = initialOrder.clinicName || '';
+      nextMaterial = initialOrder.material || 'Full Zirconia';
+      nextWarrantyPeriod = initialOrder.warrantyPeriod || '15 năm';
+      nextOrderDate = initialOrder.orderDate || '';
+      nextTeeth = initialOrder.teeth || '';
       const parsed = parseTeethNotation(initialOrder.teeth);
-      setSelectedToothIds(parsed.toothIds);
-      setTeethCountInput(
-        initialOrder.teethCount !== undefined ? initialOrder.teethCount : parsed.count || 1
-      );
-      setTotalAmountInput(amount);
-      setToothForm(initialOrder.toothForm ?? '');
-      setNotes(initialOrder.notes || '');
-      setStatus(initialOrder.status ?? '');
+      nextToothIds = parsed.toothIds;
+      nextTeethCount =
+        initialOrder.teethCount !== undefined ? initialOrder.teethCount : parsed.count || 1;
+      nextToothForm = initialOrder.toothForm ?? '';
+      nextNotes = initialOrder.notes || '';
+      nextStatus = initialOrder.status ?? '';
+      createIdRef.current = null;
     } else {
-      // Auto generate warranty code
       pendingAmountRef.current = 0;
-      const randomCode = `AT${Math.floor(10000 + Math.random() * 90000)}`;
-      setWarrantyCode(randomCode);
-      setPatientName('');
-      setPhone('');
-      setClinicName('');
-      setMaterial(materialPrices[0]?.name || 'Full Zirconia');
-      setWarrantyPeriod('15 năm');
+      nextWarranty = `AT${Math.floor(10000 + Math.random() * 90000)}`;
+      nextMaterial = materialPrices[0]?.name || 'Full Zirconia';
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
       const yyyy = today.getFullYear();
-      setOrderDate(`${dd}/${mm}/${yyyy}`);
-      const teeth = initialOrder?.teeth ?? '11-21';
-      const parsed = parseTeethNotation(teeth);
-      setTeethText(teeth);
-      setSelectedToothIds(parsed.toothIds);
-      setTeethCountInput(parsed.count);
-      setTotalAmountInput(0);
-      setToothForm('');
-      setNotes('');
-      setStatus('');
+      nextOrderDate = `${dd}/${mm}/${yyyy}`;
+      nextTeeth = initialOrder?.teeth ?? '11-21';
+      const parsed = parseTeethNotation(nextTeeth);
+      nextToothIds = parsed.toothIds;
+      nextTeethCount = parsed.count;
+      createIdRef.current = null;
     }
+
+    setWarrantyCode(nextWarranty);
+    setPatientName(nextPatient);
+    setPhone(nextPhone);
+    setClinicName(nextClinic);
+    setMaterial(nextMaterial);
+    setWarrantyPeriod(nextWarrantyPeriod);
+    setOrderDate(nextOrderDate);
+    setTeethText(nextTeeth);
+    setSelectedToothIds(nextToothIds);
+    setTeethCountInput(nextTeethCount);
+    setTotalAmountInput(nextAmount);
+    setToothForm(nextToothForm);
+    setNotes(nextNotes);
+    setStatus(nextStatus);
+
+    baselineRef.current = formSnapshot({
+      warrantyCode: nextWarranty,
+      patientName: nextPatient,
+      phone: nextPhone,
+      clinicName: nextClinic,
+      material: nextMaterial,
+      warrantyPeriod: nextWarrantyPeriod,
+      orderDate: nextOrderDate,
+      teethText: nextTeeth,
+      teethCountInput: nextTeethCount,
+      totalAmountInput: nextAmount,
+      toothForm: nextToothForm,
+      notes: nextNotes,
+      status: nextStatus,
+    });
   }, [initialOrder, isOpen]); // materialPrices read only for new-order default name
+
 
   useEffect(() => {
     if (!isOpen) return;
@@ -210,16 +277,49 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       setTotalAmountInput(suggestedTotal);
       lastSuggestionRef.current = suggestedTotal;
       flashSuggestedBadge();
+      // Autofill is not user dirtiness — keep baseline in sync for amount only.
+      try {
+        const parsed = JSON.parse(baselineRef.current) as [string, string | number][];
+        if (Array.isArray(parsed)) {
+          baselineRef.current = JSON.stringify(
+            parsed.map(([key, value]) => (key === 'totalAmountInput' ? [key, suggestedTotal] : [key, value]))
+          );
+        }
+      } catch {
+        // ignore
+      }
     }
   }, [isOpen, suggestedTotal]);
 
   useEffect(() => {
     return () => {
       if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
+      if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
     };
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (savingRef.current || isDirty()) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isOpen, warrantyCode, patientName, phone, clinicName, material, warrantyPeriod, orderDate, teethText, teethCountInput, totalAmountInput, toothForm, notes, status]);
+
   if (!isOpen) return null;
+
+  const requestClose = () => {
+    if (savingRef.current) return;
+    if (isDirty()) {
+      const ok = window.confirm('Có thay đổi chưa lưu. Bạn có chắc muốn đóng và hủy?');
+      if (!ok) return;
+    }
+    onClose();
+  };
 
   const handleTeethChange = (ids: number[], formattedString: string) => {
     setSelectedToothIds(ids);
@@ -227,8 +327,9 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     setTeethCountInput(ids.length);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) return;
     if (!patientName.trim()) {
       setFormError('Vui lòng nhập họ và tên khách hàng/bệnh nhân.');
       return;
@@ -241,8 +342,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       return;
     }
     const selectedWarranty = warrantyPeriod.trim() || '15 năm';
-
-    onSave({
+    const payload: Partial<DentalOrder> = {
       warrantyCode: warrantyCode.trim() || `AT${Date.now().toString().slice(-5)}`,
       patientName: patientName.trim(),
       phone: phone.trim(),
@@ -261,13 +361,45 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       toothForm: toothForm.trim(),
       notes: notes.trim(),
       status: status,
-    });
+    };
+    if (!initialOrder?.id) {
+      createIdRef.current = reuseOrCreateStableId('order', createIdRef.current);
+      payload.id = createIdRef.current;
+    }
 
-    onClose();
+    savingRef.current = true;
+    setSavePhase('saving');
+    setFormError('');
+    try {
+      await onSave(payload);
+      baselineRef.current = currentSnapshot();
+      setSavePhase('saved');
+      if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
+      savedNoticeTimerRef.current = setTimeout(() => {
+        savedNoticeTimerRef.current = null;
+        onClose();
+      }, 450);
+    } catch (cause) {
+      setSavePhase('idle');
+      setFormError(formatSaveError(cause));
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-3 backdrop-blur-xs sm:p-5">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-3 backdrop-blur-xs sm:p-5"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          requestClose();
+        }
+      }}
+    >
       <div role="dialog" aria-modal="true" aria-labelledby="order-form-title" className="flex max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between gap-3 bg-slate-900 px-4 py-3 text-white sm:px-6">
@@ -280,8 +412,9 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
           <button
             type="button"
             aria-label="Đóng đơn hàng"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors"
+            onClick={requestClose}
+            disabled={savePhase === 'saving'}
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -560,21 +693,36 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
             </div>
           </div>
 
+          {(formError || savePhase === 'saved') && (
+            <div
+              role="status"
+              className={`mx-4 mb-0 mt-2 rounded-lg px-3 py-2 text-sm sm:mx-6 ${
+                formError
+                  ? 'border border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+              }`}
+            >
+              {formError || 'Đã lưu'}
+            </div>
+          )}
+
           {/* Modal Footer */}
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              onClick={requestClose}
+              disabled={savePhase === 'saving'}
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2 text-sm font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg transition-colors shadow-sm"
+              disabled={savePhase === 'saving' || savePhase === 'saved'}
+              className="flex items-center gap-2 px-5 py-2 text-sm font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg transition-colors shadow-sm disabled:cursor-wait disabled:opacity-70"
             >
               <Save className="w-4 h-4" />
-              Lưu Đơn Phục Hình
+              {savePhase === 'saving' ? 'Đang lưu…' : formError ? 'Thử lại' : savePhase === 'saved' ? 'Đã lưu' : 'Lưu Đơn Phục Hình'}
             </button>
           </div>
         </form>

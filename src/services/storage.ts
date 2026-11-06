@@ -93,7 +93,8 @@ export function saveOrders(orders: DentalOrder[]): void {
 export function createOrder(
   data: Partial<DentalOrder>,
   existingOrders: DentalOrder[],
-  _priceConfigs: MaterialPriceConfig[] = DEFAULT_MATERIAL_PRICES
+  _priceConfigs: MaterialPriceConfig[] = DEFAULT_MATERIAL_PRICES,
+  options: { persistLocal?: boolean } = {}
 ): { newOrder: DentalOrder; updatedOrders: DentalOrder[] } {
   const teethCount = data.teethCount !== undefined ? Number(data.teethCount) : 1;
   const material = data.material || 'Full zirco razor';
@@ -102,9 +103,12 @@ export function createOrder(
     data.totalAmount !== undefined ? Math.max(0, Number(data.totalAmount) || 0) : 0;
   const orderDate = data.orderDate || '29/10/2026';
   const monthYear = data.monthYear || extractMonthYear(orderDate);
+  const stableId =
+    (data.id && /^[a-zA-Z0-9_-]{1,128}$/.test(data.id) && data.id) ||
+    `order_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const newOrder: DentalOrder = {
-    id: `order_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: stableId,
     warrantyCode: data.warrantyCode || `AT${Math.floor(10000 + Math.random() * 90000)}`,
     patientName: data.patientName || 'Khách Hàng',
     phone: data.phone || '',
@@ -127,7 +131,9 @@ export function createOrder(
   };
 
   const updatedOrders = [newOrder, ...existingOrders];
-  saveOrders(updatedOrders);
+  if (options.persistLocal !== false) {
+    saveOrders(updatedOrders);
+  }
   return { newOrder, updatedOrders };
 }
 

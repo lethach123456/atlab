@@ -3,6 +3,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
 import { DentalOrder, MaterialPriceConfig, ClinicMaterialPriceRow, ClinicPartner } from '../types/dental';
 import { extractWarrantyYears } from '../utils/csvParser';
+import { formatSaveError } from '../utils/reliableSave';
 import { getClinicOptions } from '../utils/clinicPartners';
 import { resolveOrderInvoiceExportScope } from '../utils/orderInvoiceExport';
 import {
@@ -71,7 +72,7 @@ interface OrderListViewProps {
   onViewWarranty: (order: DentalOrder) => void;
   onPrintTicket: (order: DentalOrder) => void;
   onEditOrder: (order: DentalOrder) => void;
-  onUpdateOrder: (updated: DentalOrder) => void;
+  onUpdateOrder: (updated: DentalOrder) => void | Promise<void>;
   onDeleteOrder: (id: string) => void;
   onNewOrder: () => void;
   onQuickAdd: (data: Partial<DentalOrder>) => Promise<DentalOrder>;
@@ -109,6 +110,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
   const [editError, setEditError] = useState('');
+  const [cellSaving, setCellSaving] = useState(false);
+  const cellSavingRef = useRef(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<boolean>(false);
   const [exportNotice, setExportNotice] = useState('');
@@ -280,14 +283,18 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     setConfirmBulkDelete(false);
   };
 
-  const saveCell = (order: DentalOrder, field: EditableField, raw: string, leaving: boolean) => {
+  const saveCell = async (order: DentalOrder, field: EditableField, raw: string, leaving: boolean) => {
     const value = raw.trim();
     const finish = () => {
       setEditingCell(null);
       setEditError('');
+      setCellSaving(false);
+      cellSavingRef.current = false;
     };
     const reject = (message: string) => {
       setEditError(message);
+      setCellSaving(false);
+      cellSavingRef.current = false;
       if (leaving) setEditingCell(null);
     };
 
@@ -296,6 +303,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       finish();
       return;
     }
+    if (cellSavingRef.current) return;
 
     let changes: Partial<DentalOrder>;
     switch (field) {
@@ -351,8 +359,19 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
         changes = { [field]: value };
     }
 
-    onUpdateOrder({ ...order, ...changes });
-    finish();
+    cellSavingRef.current = true;
+    setCellSaving(true);
+    setEditError('');
+    try {
+      await onUpdateOrder({ ...order, ...changes });
+      finish();
+    } catch (cause) {
+      setEditError(formatSaveError(cause));
+      setCellSaving(false);
+      cellSavingRef.current = false;
+      // Keep editor open so the draft value is preserved for retry.
+      if (leaving) setEditingCell({ id: order.id, field });
+    }
   };
 
   const startFill = (event: React.PointerEvent<HTMLButtonElement>, order: DentalOrder, field: EditableField) => {
@@ -385,9 +404,11 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     const low = Math.min(start, end);
     const high = Math.max(start, end);
     if (low === high) return;
-    for (let index = low; index <= high; index += 1) {
-      if (index !== start) saveCell(currentOrders[index], field, value, false);
-    }
+    void (async () => {
+      for (let index = low; index <= high; index += 1) {
+        if (index !== start) await saveCell(currentOrders[index], field, value, false);
+      }
+    })();
   };
 
   const renderCellEditor = (order: DentalOrder, field: EditableField, label: string, secondary = false) => {
@@ -411,8 +432,9 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           aria-label={label}
           value={raw}
           title={raw || `Chọn ${label.toLowerCase()}`}
-          onChange={(event) => saveCell(order, field, event.currentTarget.value, false)}
-          className="box-border h-7 w-full min-w-0 max-w-full cursor-pointer truncate rounded border border-slate-200 bg-white px-1.5 py-0 text-[inherit] leading-none hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-teal-500 dark:border-slate-700 dark:bg-slate-900"
+          disabled={cellSaving}
+          onChange={(event) => { void saveCell(order, field, event.currentTarget.value, false); }}
+          className="box-border h-7 w-full min-w-0 max-w-full cursor-pointer truncate rounded border border-slate-200 bg-white px-1.5 py-0 text-[inherit] leading-none hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-teal-500 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900"
         >
           {!options.includes(raw) && (
             <option value={raw} disabled>{raw || `Chọn ${label.toLowerCase()}`}</option>
@@ -436,14 +458,16 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           maxLength={fieldMaxLengths[field]}
           inputMode={field === 'teethCount' || field === 'totalAmount' ? 'numeric' : undefined}
           onChange={() => setEditError('')}
-          onBlur={(event) => saveCell(order, field, event.currentTarget.value, true)}
+          disabled={cellSaving}
+          onBlur={(event) => { void saveCell(order, field, event.currentTarget.value, true); }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
             if (event.key === 'Enter') {
               event.preventDefault();
-              saveCell(order, field, event.currentTarget.value, false);
+              void saveCell(order, field, event.currentTarget.value, false);
             } else if (event.key === 'Escape') {
               event.preventDefault();
+              if (cellSavingRef.current) return;
               setEditingCell(null);
               setEditError('');
             }
@@ -699,6 +723,11 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
             )}
           </div>
         </div>
+        {cellSaving && !editError && (
+          <div role="status" className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200">
+            Đang lưu…
+          </div>
+        )}
         {editError && (
           <p id="order-cell-error" role="alert" className="px-4 pb-2 text-xs text-rose-700 dark:text-rose-300">
             {editError}

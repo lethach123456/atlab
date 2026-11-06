@@ -8,6 +8,7 @@ import {
   getUnitPriceForMaterial,
   resolveMaterialPricesForClinic,
 } from '../utils/financeUtils';
+import { formatSaveError, reuseOrCreateStableId } from '../utils/reliableSave';
 
 interface QuickOrderValues {
   warrantyCode: string;
@@ -84,6 +85,7 @@ export function QuickOrderEntry({
   const [notice, setNotice] = useState('');
   const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
   const saving = useRef(false);
+  const createIdRef = useRef<string | null>(null);
   const codeInput = useRef<HTMLInputElement>(null);
   const lastSuggestionRef = useRef(0);
   const totalAmountRef = useRef(0);
@@ -150,8 +152,25 @@ export function QuickOrderEntry({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [pickerOpen]);
 
+  function hasUnsavedDraft() {
+    return Boolean(
+      values.warrantyCode.trim() ||
+      values.patientName.trim() ||
+      values.teeth.trim() ||
+      values.notes.trim() ||
+      (values.teethCount.trim() && values.teethCount.trim() !== '1')
+    );
+  }
+
   function collapse() {
     if (busy) return;
+    if (hasUnsavedDraft()) {
+      const ok = window.confirm('Có nội dung chưa lưu. Bạn có chắc muốn thu gọn và hủy?');
+      if (!ok) {
+        setPinned(true);
+        return;
+      }
+    }
     const restoreFocus = panelRef.current?.contains(document.activeElement);
     setHovered(false);
     setPinned(false);
@@ -263,7 +282,9 @@ export function QuickOrderEntry({
     setError('');
     setNotice('');
     try {
+      createIdRef.current = reuseOrCreateStableId('order', createIdRef.current);
       const created = await onAdd({
+        id: createIdRef.current,
         warrantyCode: values.warrantyCode.trim(),
         patientName: values.patientName.trim(),
         clinicName: clinic.name,
@@ -281,6 +302,7 @@ export function QuickOrderEntry({
         status: '',
         notes: values.notes.trim(),
       });
+      createIdRef.current = null;
       const nextSuggested = suggestedUnitPrice > 0 ? suggestedUnitPrice : 0;
       setValues((current) => ({
         ...current,
@@ -295,11 +317,11 @@ export function QuickOrderEntry({
       if (nextSuggested > 0) flashSuggestedBadge();
       else setShowSuggestedBadge(false);
       setPickerOpen(false);
-      setNotice(`Đã thêm ${created.warrantyCode} — ${created.patientName}.`);
+      setNotice(`Đã lưu ${created.warrantyCode} — ${created.patientName}.`);
       setFormFocused(true);
       requestAnimationFrame(() => codeInput.current?.focus());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Chưa thêm được đơn. Vui lòng thử lại.');
+      setError(formatSaveError(cause, 'Chưa lưu được đơn. Kiểm tra mạng rồi bấm Thử lại.'));
       setPinned(true);
     } finally {
       saving.current = false;
@@ -427,7 +449,7 @@ export function QuickOrderEntry({
                     ))}
                     <td className="px-3 align-bottom">
                       <button type="submit" disabled={busy} className="flex h-9 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-teal-700 px-1 text-[11px] font-bold text-white hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:cursor-wait disabled:opacity-60">
-                        <Plus aria-hidden="true" className="size-3.5 shrink-0" /> {busy ? 'Đang thêm…' : 'Thêm nhanh'}
+                        <Plus aria-hidden="true" className="size-3.5 shrink-0" /> {busy ? 'Đang lưu…' : error ? 'Thử lại' : 'Thêm nhanh'}
                       </button>
                     </td>
                   </tr>

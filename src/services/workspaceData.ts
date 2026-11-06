@@ -6,12 +6,14 @@ import {
   query,
   serverTimestamp,
   Timestamp,
+  waitForPendingWrites,
   where,
   writeBatch,
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { addChangeHistoryToBatch, plainRecord } from './changeHistory';
+import { assertOnlineForSave, formatSaveError } from '../utils/reliableSave';
 import { createClinicNameResolver } from '../utils/clinicPartners';
 import type {
   CashflowTransaction,
@@ -181,6 +183,32 @@ function writeRecord(change: WorkspaceChange, ownerId: string): DocumentData {
   return record;
 }
 
+
+async function waitForServerAcknowledgement(): Promise<void> {
+  assertOnlineForSave();
+  const timeoutMs = 25000;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      waitForPendingWrites(db),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              'Máy chủ chưa xác nhận lưu (hết thời gian chờ). Kiểm tra mạng rồi bấm Thử lại.'
+            )
+          );
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Đang offline — chưa lưu lên máy chủ. Kiểm tra mạng rồi bấm Thử lại.');
+  }
+}
+
 /** Related changes within one chunk are committed atomically (entity + history). */
 export async function commitWorkspaceChanges(
   ownerId: string,
@@ -245,8 +273,10 @@ export async function commitWorkspaceChanges(
       });
       await batch.commit();
     }
+    await waitForServerAcknowledgement();
   } catch (error) {
-    throw workspaceError(error);
+    const mapped = workspaceError(error);
+    throw new Error(formatSaveError(error, mapped.message));
   }
 }
 
