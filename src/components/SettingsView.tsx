@@ -18,6 +18,7 @@ import {
   listClinicsWithCustomMaterialPrices,
   materialConfigsFromClinicRows,
 } from '../utils/financeUtils';
+import { getClinicOptions } from '../utils/clinicPartners';
 import { ClinicsView } from './ClinicsView';
 import { FdiChartView } from './FdiChartView';
 import { MaterialsCatalogView } from './MaterialsCatalogView';
@@ -130,13 +131,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [selectedClinicName, setSelectedClinicName] = useState('');
   const [removeClinicTableConfirm, setRemoveClinicTableConfirm] = useState(false);
 
-  const activePartners = useMemo(
-    () =>
-      clinicPartners
-        .filter((partner) => !partner.archived)
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
-    [clinicPartners]
+  // Same clinic list as order entry: partners + clinics appearing on orders.
+  const clinicPriceOptions = useMemo(
+    () => getClinicOptions(orders, clinicPartners),
+    [orders, clinicPartners]
   );
 
   const clinicsWithCustom = useMemo(
@@ -583,8 +581,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       setMaterialError('');
                       setRemoveClinicTableConfirm(false);
                       setMaterialFormOpen(false);
-                      if (!selectedClinicName && activePartners[0]) {
-                        setSelectedClinicName(activePartners[0].name);
+                      if (!selectedClinicName && clinicPriceOptions[0]) {
+                        setSelectedClinicName(clinicPriceOptions[0].name);
                       }
                     }}
                     className={`px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer ${
@@ -613,11 +611,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="min-h-9 min-w-[12rem] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-bold text-slate-900 dark:text-white"
                       >
                         <option value="">— Chọn nha khoa —</option>
-                        {activePartners.map((partner) => {
-                          const hasCustom = clinicHasCustomMaterialPrices(partner.name, clinicMaterialPrices);
+                        {clinicPriceOptions.map((clinic) => {
+                          const hasCustom = clinicHasCustomMaterialPrices(clinic.name, clinicMaterialPrices);
                           return (
-                            <option key={partner.id || partner.name} value={partner.name}>
-                              {partner.name}{hasCustom ? ' · có bảng riêng' : ''}
+                            <option key={clinic.name} value={clinic.name}>
+                              {clinic.name}{hasCustom ? ' · có bảng riêng' : ''}
                             </option>
                           );
                         })}
