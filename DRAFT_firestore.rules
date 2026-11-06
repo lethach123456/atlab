@@ -111,9 +111,10 @@ service cloud.firestore {
       ]) &&
       data.keys().hasOnly([
         'id', 'ownerId', 'type', 'category', 'title', 'amount',
-        'date', 'monthYear', 'clinicName', 'paymentMethod', 'notes',
+        'date', 'monthYear', 'clinicName', 'spenderName', 'paymentMethod', 'notes',
         'createdAt', 'updatedAt'
       ]) &&
+      (!( 'spenderName' in data) || (data.spenderName is string && data.spenderName.size() <= 150)) &&
       isValidId(data.id) &&
       data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
       data.ownerId == request.auth.uid &&

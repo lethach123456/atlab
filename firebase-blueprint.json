@@ -96,6 +96,7 @@
         "date": { "type": "string", "maxLength": 32 },
         "monthYear": { "type": "string", "maxLength": 16 },
         "clinicName": { "type": "string", "maxLength": 250 },
+        "spenderName": { "type": "string", "maxLength": 150 },
         "paymentMethod": { "type": "string", "enum": ["transfer", "cash"], "maxLength": 32 },
         "notes": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "format": "date-time" },

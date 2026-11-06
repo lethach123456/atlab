@@ -74,6 +74,7 @@ export interface CashflowTransaction {
   date: string; // DD/MM/YYYY, or empty when only the accounting month is known
   monthYear: string; // MM/YYYY
   clinicName?: string; // Nếu gắn với nha khoa
+  spenderName?: string; // Người chi (phiếu chi); trống = chưa gắn
   paymentMethod: '' | 'transfer' | 'cash';
   notes?: string;
   createdAt: number;

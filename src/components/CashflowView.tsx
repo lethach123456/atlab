@@ -9,6 +9,7 @@ import {
   Wallet,
   Plus,
   Trash2,
+  Pencil,
   X,
   Search,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ interface CashflowViewProps {
   readOnly?: boolean;
   availableMonths: string[];
   onAddTransaction: (tx: Omit<CashflowTransaction, 'id' | 'createdAt'>) => void;
+  onUpdateTransaction: (id: string, tx: Omit<CashflowTransaction, 'id' | 'createdAt'>) => void;
   onDeleteTransaction: (id: string) => void;
 }
 
@@ -41,11 +43,16 @@ const EXPENSE_CATEGORIES = [
   PROFIT_EXPENSE_CATEGORIES.extra,
 ];
 
+const UNASSIGNED_SPENDER = 'Chưa gắn người chi';
+
+type TxPayload = Omit<CashflowTransaction, 'id' | 'createdAt'>;
+
 export const CashflowView: React.FC<CashflowViewProps> = ({
   transactions,
   readOnly = false,
   availableMonths,
   onAddTransaction,
+  onUpdateTransaction,
   onDeleteTransaction,
 }) => {
   const cashflowMonths = useMemo(() => sortMonthYearsDesc([
@@ -59,13 +66,27 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
   const [txCategory, setTxCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [txTitle, setTxTitle] = useState('');
   const [txAmount, setTxAmount] = useState<number>(2000000);
   const [txDate, setTxDate] = useState(`15/${latestMonth}`);
-  const [txMethod, setTxMethod] = useState<'transfer' | 'cash'>('transfer');
+  const [txMethod, setTxMethod] = useState<'' | 'transfer' | 'cash'>('transfer');
   const [txNotes, setTxNotes] = useState('');
+  const [txSpender, setTxSpender] = useState('');
+  const [txClinicName, setTxClinicName] = useState('');
+  const [newSpenderMode, setNewSpenderMode] = useState(false);
+  const [newSpenderName, setNewSpenderName] = useState('');
+
+  const knownSpenders = useMemo(() => {
+    const names = new Set<string>();
+    for (const t of transactions) {
+      const name = (t.spenderName || '').trim();
+      if (name) names.add(name);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [transactions]);
 
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -78,7 +99,8 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
           const matchTitle = t.title.toLowerCase().includes(q);
           const matchCat = t.category.toLowerCase().includes(q);
           const matchNote = (t.notes || '').toLowerCase().includes(q);
-          if (!matchTitle && !matchCat && !matchNote) return false;
+          const matchSpender = (t.spenderName || '').toLowerCase().includes(q);
+          if (!matchTitle && !matchCat && !matchNote && !matchSpender) return false;
         }
         return true;
       })
@@ -98,57 +120,97 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       .filter((t) => t.type === 'expense')
       .reduce((s, t) => s + t.amount, 0);
 
-    const expMap = new Map<string, number>();
+    const spenderMap = new Map<string, number>();
     list
       .filter((t) => t.type === 'expense')
       .forEach((t) => {
-        expMap.set(t.category, (expMap.get(t.category) || 0) + t.amount);
+        const key = (t.spenderName || '').trim() || UNASSIGNED_SPENDER;
+        spenderMap.set(key, (spenderMap.get(key) || 0) + t.amount);
       });
 
-    const expenseByCategory = Array.from(expMap.entries()).sort((a, b) => b[1] - a[1]);
+    const expenseBySpender = Array.from(spenderMap.entries()).sort((a, b) => {
+      if (a[0] === UNASSIGNED_SPENDER) return 1;
+      if (b[0] === UNASSIGNED_SPENDER) return -1;
+      return b[1] - a[1];
+    });
 
     return {
       totalIncome,
       totalExpense,
       netProfit: totalIncome - totalExpense,
-      expenseByCategory,
+      expenseBySpender,
     };
   }, [transactions, selectedMonth]);
 
-  const handleOpenModal = (defaultType: 'income' | 'expense') => {
-    const targetMonth = selectedMonth === 'ALL' ? latestMonth : selectedMonth;
+  const resetForm = (defaultType: 'income' | 'expense', targetMonth: string) => {
+    setEditingId(null);
     setTxType(defaultType);
-    setTxCategory(
-      defaultType === 'income' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]
-    );
+    setTxCategory(defaultType === 'income' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]);
     setTxTitle('');
     setTxAmount(defaultType === 'income' ? 5000000 : 2500000);
     setTxDate(`20/${targetMonth}`);
     setTxMethod('transfer');
     setTxNotes('');
+    setTxSpender('');
+    setTxClinicName('');
+    setNewSpenderMode(false);
+    setNewSpenderName('');
+  };
+
+  const handleOpenModal = (defaultType: 'income' | 'expense') => {
+    const targetMonth = selectedMonth === 'ALL' ? latestMonth : selectedMonth;
+    resetForm(defaultType, targetMonth);
     setModalOpen(true);
+  };
+
+  const handleOpenEdit = (tx: CashflowTransaction) => {
+    setEditingId(tx.id);
+    setTxType(tx.type);
+    const cats = tx.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    setTxCategory(cats.includes(tx.category) ? tx.category : cats[0]);
+    setTxTitle(tx.title);
+    setTxAmount(tx.amount);
+    setTxDate(tx.date || `01/${tx.monthYear}`);
+    setTxMethod(tx.paymentMethod || 'transfer');
+    setTxNotes(tx.notes || '');
+    const spender = (tx.spenderName || '').trim();
+    setTxSpender(spender);
+    setTxClinicName(tx.clinicName || '');
+    setNewSpenderMode(false);
+    setNewSpenderName('');
+    setModalOpen(true);
+  };
+
+  const resolvedSpenderName = (): string => {
+    if (txType !== 'expense') return '';
+    if (newSpenderMode) return newSpenderName.trim();
+    return txSpender.trim();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!txTitle.trim() || txAmount <= 0) return;
 
-    onAddTransaction({
+    const payload: TxPayload = {
       type: txType,
       category: txCategory,
       title: txTitle.trim(),
       amount: Number(txAmount),
       date: txDate.trim(),
-      monthYear: extractMonthYear(txDate),
+      monthYear: extractMonthYear(txDate) || (selectedMonth === 'ALL' ? latestMonth : selectedMonth),
+      clinicName: txClinicName,
+      spenderName: resolvedSpenderName(),
       paymentMethod: txMethod,
       notes: txNotes.trim(),
-    });
+    };
+
+    if (editingId) onUpdateTransaction(editingId, payload);
+    else onAddTransaction(payload);
     setModalOpen(false);
   };
 
   return (
     <div className="space-y-4">
-      {/* Compact Single-Row Filter & Action Bar */}
       <div className="sm:bg-white sm:dark:bg-slate-900 sm:p-3.5 sm:rounded-xl sm:border sm:border-slate-200/80 sm:dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 flex-1">
           <MonthFilter
@@ -219,7 +281,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm diễn giải..."
+              placeholder="Tìm diễn giải / người chi..."
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white"
             />
           </div>
@@ -245,7 +307,6 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         )}
       </div>
 
-      {/* Deep Dark-Jewel Summary Strip */}
       <div className="dashboard-kpis grid min-w-0 grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-4">
         <div className="p-4 sm:p-5 rounded-2xl flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 text-white border border-teal-500/25 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.55),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-teal-500/15 blur-2xl pointer-events-none" />
@@ -293,7 +354,6 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         </div>
       </div>
 
-      {/* Main Content: Ledger Table (8 cols) + Expense Breakdown (4 cols) */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <div className="xl:col-span-8 bento-card rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
@@ -310,6 +370,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                   <th className="py-2.5 px-3">Loại</th>
                   <th className="py-2.5 px-3">Hạng Mục</th>
                   <th className="py-2.5 px-3">Diễn Giải</th>
+                  <th className="py-2.5 px-3">Người Chi</th>
                   <th className="py-2.5 px-3">Hình Thức</th>
                   <th className="py-2.5 px-3 text-right">Số Tiền</th>
                   <th className="py-2.5 px-2 text-right"></th>
@@ -322,7 +383,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                     className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                   >
                     <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">
-                      {tx.date}
+                      {tx.date || '—'}
                     </td>
                     <td className="py-2.5 px-3 whitespace-nowrap">
                       {tx.type === 'income' ? (
@@ -346,6 +407,15 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                         </span>
                       )}
                     </td>
+                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                      {tx.type === 'expense'
+                        ? (tx.spenderName || '').trim() || (
+                            <span className="text-slate-400">—</span>
+                          )
+                        : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                    </td>
                     <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
                       {tx.paymentMethod === 'transfer' ? 'CK' : tx.paymentMethod === 'cash' ? 'Tiền mặt' : '—'}
                     </td>
@@ -361,12 +431,24 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                     </td>
                     <td className="py-2.5 px-2 text-right">
                       {!readOnly && (
-                        <button
-                          onClick={() => onDeleteTransaction(tx.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="inline-flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(tx)}
+                            className="p-1 text-slate-400 hover:text-teal-600 rounded cursor-pointer"
+                            title="Sửa"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteTransaction(tx.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                            title="Xóa"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -379,25 +461,28 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         <div className="xl:col-span-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-3 self-start">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Cơ Cấu Chi Phí
+              Cơ Cấu Chi · Theo Người Chi
             </span>
             <span className="text-xs font-mono text-slate-400">
               {selectedMonth === 'ALL' ? 'Toàn kỳ' : selectedMonth}
             </span>
           </div>
           <div className="space-y-2.5">
-            {periodSummary.expenseByCategory.map(([cat, amount]) => {
+            {periodSummary.expenseBySpender.length === 0 && (
+              <p className="text-xs text-slate-400">Chưa có khoản chi trong kỳ.</p>
+            )}
+            {periodSummary.expenseBySpender.map(([name, amount]) => {
               const pct =
                 periodSummary.totalExpense > 0
                   ? Math.round((amount / periodSummary.totalExpense) * 100)
                   : 0;
               return (
-                <div key={cat} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      {cat}
+                <div key={name} className="space-y-1">
+                  <div className="flex justify-between text-xs gap-2">
+                    <span className={`font-semibold ${name === UNASSIGNED_SPENDER ? 'text-slate-400 italic' : 'text-slate-700 dark:text-slate-300'}`}>
+                      {name}
                     </span>
-                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    <span className="font-mono font-bold text-slate-900 dark:text-white shrink-0">
                       {formatVND(amount)} ({pct}%)
                     </span>
                   </div>
@@ -414,13 +499,18 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         </div>
       </div>
 
-      {/* Add Income / Expense Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3.5 bg-slate-950 text-white">
               <h3 className="font-bold text-sm">
-                {txType === 'income' ? 'Lập Phiếu Thu' : 'Lập Phiếu Chi'}
+                {editingId
+                  ? txType === 'income'
+                    ? 'Sửa Phiếu Thu'
+                    : 'Sửa Phiếu Chi'
+                  : txType === 'income'
+                    ? 'Lập Phiếu Thu'
+                    : 'Lập Phiếu Chi'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
@@ -437,6 +527,8 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                   onClick={() => {
                     setTxType('income');
                     setTxCategory(INCOME_CATEGORIES[0]);
+                    setNewSpenderMode(false);
+                    setNewSpenderName('');
                   }}
                   className={`py-1.5 rounded-md font-bold transition-all cursor-pointer ${
                     txType === 'income'
@@ -495,6 +587,63 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 />
               </div>
 
+              {txType === 'expense' && (
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                    Người Chi
+                  </label>
+                  {!newSpenderMode ? (
+                    <div className="flex gap-2">
+                      <select
+                        value={txSpender}
+                        onChange={(e) => setTxSpender(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                      >
+                        <option value="">— Chưa chọn —</option>
+                        {knownSpenders.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewSpenderMode(true);
+                          setNewSpenderName('');
+                        }}
+                        className="shrink-0 px-3 py-2 font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg cursor-pointer"
+                        title="Thêm người chi"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={newSpenderName}
+                        onChange={(e) => setNewSpenderName(e.target.value)}
+                        placeholder="Tên người chi mới..."
+                        maxLength={150}
+                        className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewSpenderMode(false);
+                          setNewSpenderName('');
+                        }}
+                        className="shrink-0 px-3 py-2 font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
@@ -524,6 +673,35 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                    Hình Thức
+                  </label>
+                  <select
+                    value={txMethod}
+                    onChange={(e) => setTxMethod(e.target.value as '' | 'transfer' | 'cash')}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                  >
+                    <option value="transfer">Chuyển khoản</option>
+                    <option value="cash">Tiền mặt</option>
+                    <option value="">—</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                    Ghi Chú
+                  </label>
+                  <input
+                    type="text"
+                    value={txNotes}
+                    onChange={(e) => setTxNotes(e.target.value)}
+                    placeholder="Tuỳ chọn"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
@@ -536,7 +714,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                   type="submit"
                   className="px-4 py-1.5 font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg cursor-pointer"
                 >
-                  Lưu Phiếu
+                  {editingId ? 'Cập Nhật' : 'Lưu Phiếu'}
                 </button>
               </div>
             </form>

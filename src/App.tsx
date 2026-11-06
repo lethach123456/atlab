@@ -565,6 +565,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
       date: newPayment.paymentDate,
       monthYear: newPayment.monthYear,
       clinicName: newPayment.clinicName,
+      spenderName: '',
       paymentMethod: newPayment.method,
       notes: newPayment.notes,
       createdAt: Date.now(),
@@ -600,6 +601,9 @@ function Workspace({ profile }: { profile: UserProfile }) {
     if (isReadOnly) return;
     const newTx: CashflowTransaction = {
       ...txData,
+      clinicName: txData.clinicName || '',
+      spenderName: txData.type === 'expense' ? (txData.spenderName || '').trim() : '',
+      notes: txData.notes || '',
       id: `cf_${Date.now()}`,
       createdAt: Date.now(),
     };
@@ -608,6 +612,26 @@ function Workspace({ profile }: { profile: UserProfile }) {
     saveCashflows(next);
     write(saveWorkspaceRecord('cashflows', newTx.id, newTx, ownerId, true));
 
+  };
+
+  const handleUpdateCashflow = (
+    id: string,
+    txData: Omit<CashflowTransaction, 'id' | 'createdAt'>
+  ) => {
+    if (isReadOnly) return;
+    const existing = cashflows.find((t) => t.id === id);
+    if (!existing) return;
+    const updated: CashflowTransaction = {
+      ...existing,
+      ...txData,
+      clinicName: txData.clinicName || '',
+      spenderName: txData.type === 'expense' ? (txData.spenderName || '').trim() : '',
+      notes: txData.notes || '',
+    };
+    const next = cashflows.map((t) => (t.id === id ? updated : t));
+    setCashflows(next);
+    saveCashflows(next);
+    write(saveWorkspaceRecord('cashflows', id, updated, ownerId, false));
   };
 
   const handleDeleteCashflow = (id: string) => {
@@ -630,7 +654,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
     const id = `cf_profit_${crypto.randomUUID()}`;
     const transaction: CashflowTransaction = {
       id, type: 'expense', category, title: cleanTitle, amount, monthYear,
-      date: '', paymentMethod: '', notes: '', createdAt: Date.now(),
+      date: '', clinicName: '', spenderName: '', paymentMethod: '', notes: '', createdAt: Date.now(),
     };
     await saveWorkspaceRecord('cashflows', id, transaction, ownerId, true);
   };
@@ -998,6 +1022,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 readOnly={isReadOnly}
                 availableMonths={availableMonths}
                 onAddTransaction={handleAddCashflow}
+                onUpdateTransaction={handleUpdateCashflow}
                 onDeleteTransaction={handleDeleteCashflow}
               />
             )}

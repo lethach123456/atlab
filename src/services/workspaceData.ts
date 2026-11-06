@@ -166,7 +166,10 @@ function writeRecord(change: WorkspaceChange, ownerId: string): DocumentData {
       record.notes ??= '';
     }
     if (change.collection === 'orders') record.paymentStatus ??= 'unpaid';
-    if (change.collection === 'cashflows') record.clinicName ??= '';
+    if (change.collection === 'cashflows') {
+      record.clinicName ??= '';
+      record.spenderName ??= '';
+    }
     record.createdAt = serverTimestamp();
   } else {
     // Merge updates preserve the original server timestamp, including nanoseconds.
