@@ -15,13 +15,12 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
-  setDoc,
-  updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { auth, db } from '../lib/firebase';
-import { recordChangeHistoryBestEffort, plainRecord } from './changeHistory';
+import { addChangeHistoryToBatch, plainRecord } from './changeHistory';
 import type { UpdateUserInput, UserProfile, UserRole } from '../types/user';
 
 export function accountError(error: unknown): string {
@@ -112,19 +111,22 @@ export async function createAccount(
         active: true,
         workspaceOwnerId: admin.workspaceOwnerId,
       };
-      await setDoc(doc(db, 'users', credential.user.uid), {
+      // Profile + audit in one batch so create never succeeds without history.
+      // Password is never written to history.
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', credential.user.uid), {
         ...profileDoc,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      // Password is never written to history. History write is best-effort after profile create.
-      await recordChangeHistoryBestEffort(admin.workspaceOwnerId, {
+      addChangeHistoryToBatch(batch, admin.workspaceOwnerId, {
         action: 'create',
         entityType: 'users',
         entityId: credential.user.uid,
         before: null,
         after: profileDoc,
       });
+      await batch.commit();
     } catch (error) {
       await deleteUser(credential.user).catch(() => undefined);
       throw error;
@@ -148,17 +150,18 @@ export async function updateAccount(uid: string, { emailChange, ...changes }: Up
       const ref = doc(db, 'users', uid);
       const beforeSnap = await getDoc(ref);
       const before = beforeSnap.exists() ? plainRecord(beforeSnap.data()) : null;
-      await updateDoc(ref, { ...changes, updatedAt: serverTimestamp() });
       const ownerId = String(before?.workspaceOwnerId || auth.currentUser?.uid || '');
-      if (ownerId) {
-        await recordChangeHistoryBestEffort(ownerId, {
-          action: 'update',
-          entityType: 'users',
-          entityId: uid,
-          before,
-          after: { ...(before || {}), ...changes },
-        });
-      }
+      if (!ownerId) throw new Error('Không xác định được labo để ghi lịch sử.');
+      const batch = writeBatch(db);
+      batch.update(ref, { ...changes, updatedAt: serverTimestamp() });
+      addChangeHistoryToBatch(batch, ownerId, {
+        action: 'update',
+        entityType: 'users',
+        entityId: uid,
+        before,
+        after: { ...(before || {}), ...changes },
+      });
+      await batch.commit();
     } catch (error) {
       if (emailChange) throw { code: 'account/profile-update-after-email' };
       throw error;

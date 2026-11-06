@@ -124,6 +124,37 @@ export function buildFieldChanges(
   return changes;
 }
 
+
+/**
+ * UI-only field list from snapshots / records — not persisted to Firestore.
+ * Uncapped so admins can inspect full before/after when display diffs were truncated.
+ */
+export function buildInspectFieldChanges(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined,
+  action: ChangeAction
+): FieldChange[] {
+  const left = sanitizeHistoryRecord(before) || {};
+  const right = sanitizeHistoryRecord(after) || {};
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  const changes: FieldChange[] = [];
+  for (const field of [...keys].sort()) {
+    const beforeRaw = left[field];
+    const afterRaw = right[field];
+    const beforeText = stringifyHistoryValue(
+      REDACT_FIELDS.has(field) && beforeRaw !== undefined ? '•••' : beforeRaw
+    );
+    const afterText = stringifyHistoryValue(
+      REDACT_FIELDS.has(field) && afterRaw !== undefined ? '•••' : afterRaw
+    );
+    if (beforeText === afterText) continue;
+    if (action === 'create' && afterText === null) continue;
+    if (action === 'delete' && beforeText === null) continue;
+    changes.push({ field, before: beforeText, after: afterText });
+  }
+  return changes;
+}
+
 export const ENTITY_LABELS: Record<string, string> = {
   orders: 'Đơn hàng',
   debtPayments: 'Thu công nợ',

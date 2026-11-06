@@ -25,9 +25,11 @@ import {
   type FieldChange,
 } from '../utils/changeDiff';
 import { buildRollbackPlan, type UndoSnapshot } from '../utils/changeUndo';
+export { CHANGE_HISTORY_PAIRED_CHUNK, chunkForPairedHistoryWrites } from '../utils/historyBatch';
 
 export const CHANGE_HISTORY_COLLECTION = 'changeHistory';
 export const CHANGE_HISTORY_PAGE_SIZE = 40;
+
 
 export interface ChangeHistoryEntry {
   id: string;

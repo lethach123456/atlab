@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { addChangeHistoryToBatch, addChangeHistoryToTransaction, plainRecord } from './changeHistory';
+import { chunkForPairedHistoryWrites } from '../utils/historyBatch';
 import type { CommissionInput, SaleCommission } from '../types/commission';
 
 async function commissionId(ownerId: string, input: CommissionInput) {
@@ -112,8 +113,7 @@ export async function saveCommissions(
   }));
   let created = 0;
   try {
-    for (let offset = 0; offset < records.length; offset += 200) {
-      const chunk = records.slice(offset, offset + 400);
+    for (const chunk of chunkForPairedHistoryWrites(records)) {
       created += await runTransaction(db, async (transaction) => {
         const snapshots = await Promise.all(chunk.map(({ reference }) => transaction.get(reference)));
         let added = 0;
@@ -172,8 +172,7 @@ export async function deleteCommissions(ids: string[]): Promise<void> {
   const validIds = ids.filter((id) => id && /^[a-zA-Z0-9_-]{1,128}$/.test(id));
   if (validIds.length === 0) return;
   try {
-    for (let offset = 0; offset < validIds.length; offset += 200) {
-      const chunk = validIds.slice(offset, offset + 200);
+    for (const chunk of chunkForPairedHistoryWrites(validIds)) {
       const snaps = await Promise.all(chunk.map((id) => getDoc(doc(db, 'saleCommissions', id))));
       const batch = writeBatch(db);
       chunk.forEach((id, index) => {

@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { addChangeHistoryToBatch, plainRecord } from './changeHistory';
+import { CHANGE_HISTORY_PAIRED_CHUNK } from '../utils/historyBatch';
 import { assertOnlineForSave, formatSaveError } from '../utils/reliableSave';
 import { createClinicNameResolver } from '../utils/clinicPartners';
 import type {
@@ -227,7 +228,7 @@ export async function commitWorkspaceChanges(
   }
   try {
     // Each business write pairs with one history doc → keep chunks under the 500 op limit.
-    const chunkSize = 200;
+    const chunkSize = CHANGE_HISTORY_PAIRED_CHUNK;
     for (let offset = 0; offset < changes.length; offset += chunkSize) {
       const chunk = changes.slice(offset, offset + chunkSize);
       const befores = await Promise.all(

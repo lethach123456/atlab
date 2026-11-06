@@ -10,7 +10,8 @@ import {
   describeUndoAvailability,
   undoChangeHistoryEntry,
 } from '../services/changeHistoryUndo';
-import { ENTITY_LABELS, HISTORY_MORE_FIELD, actionLabelVi, type ChangeAction } from '../utils/changeDiff';
+import { PARTIAL_UPDATE_RESTORE_NOTE, isPartialSecretPreservingUpdate } from '../utils/changeUndo';
+import { ENTITY_LABELS, HISTORY_MORE_FIELD, actionLabelVi, buildInspectFieldChanges, type ChangeAction, type FieldChange } from '../utils/changeDiff';
 import { useNotify } from './AppNotifications';
 
 interface ChangeHistoryViewProps {
@@ -46,6 +47,17 @@ function actionBadgeClass(action: ChangeAction): string {
   return 'bg-sky-500/10 text-sky-700 dark:text-sky-400';
 }
 
+
+function changesForEntry(entry: ChangeHistoryEntry, useSnapshots: boolean): FieldChange[] {
+  if (
+    useSnapshots &&
+    (entry.beforeSnapshot || entry.afterSnapshot)
+  ) {
+    return buildInspectFieldChanges(entry.beforeSnapshot, entry.afterSnapshot, entry.action);
+  }
+  return entry.changes;
+}
+
 export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId }) => {
   const [entries, setEntries] = useState<ChangeHistoryEntry[]>([]);
   const [cursor, setCursor] = useState<QueryDocumentSnapshot | null>(null);
@@ -57,6 +69,7 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
   const [entityType, setEntityType] = useState('');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [inspectSnapshotIds, setInspectSnapshotIds] = useState<Record<string, boolean>>({});
   const [confirmEntry, setConfirmEntry] = useState<ChangeHistoryEntry | null>(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const [undoMessage, setUndoMessage] = useState('');
@@ -223,65 +236,111 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
                   </button>
                   {open && (
                     <div className="px-3.5 pb-3">
-                      {entry.changes.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic">Không có khác biệt trường để hiển thị.</p>
-                      ) : (
-                        <div className="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800">
-                          <table className="w-full text-[11px]">
-                            <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500">
-                              <tr>
-                                <th className="text-left font-bold px-2 py-1.5">Trường</th>
-                                <th className="text-left font-bold px-2 py-1.5">Trước</th>
-                                <th className="text-left font-bold px-2 py-1.5">Sau</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {entry.changes.map((change) =>
-                                change.field === HISTORY_MORE_FIELD ? (
-                                  <tr key={`${entry.id}-${change.field}`}>
-                                    <td
-                                      colSpan={3}
-                                      className="px-2 py-1.5 text-[11px] italic text-slate-500 dark:text-slate-400"
-                                    >
-                                      …{change.after || 'còn thay đổi khác'} (đủ để xem; hoàn tác dùng snapshot đầy đủ)
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  <tr key={`${entry.id}-${change.field}`}>
-                                    <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                                      {change.field}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-rose-700/90 dark:text-rose-300 break-all">
-                                      {change.before ?? '—'}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-emerald-700/90 dark:text-emerald-300 break-all">
-                                      {change.after ?? '—'}
-                                    </td>
-                                  </tr>
-                                )
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
+                      {(() => {
+                        const hasSnapshots = !!(entry.beforeSnapshot || entry.afterSnapshot);
+                        const useSnapshots = !!inspectSnapshotIds[entry.id] && hasSnapshots;
+                        const rows = changesForEntry(entry, useSnapshots);
+                        const truncated = entry.changes.some((c) => c.field === HISTORY_MORE_FIELD);
+                        return (
+                          <>
+                            {hasSnapshots && (truncated || rows.length > 0) && (
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInspectSnapshotIds((prev) => ({
+                                      ...prev,
+                                      [entry.id]: !prev[entry.id],
+                                    }));
+                                  }}
+                                  className="text-[11px] font-bold text-teal-700 dark:text-teal-300 hover:underline cursor-pointer"
+                                >
+                                  {useSnapshots
+                                    ? 'Thu gọn danh sách trường'
+                                    : truncated
+                                      ? 'Xem đủ các trường từ snapshot'
+                                      : 'Xem đối chiếu snapshot đầy đủ'}
+                                </button>
+                                {useSnapshots && (
+                                  <span className="text-[10px] text-slate-400">
+                                    {rows.length} trường · từ before/after snapshot (không bị cắt _more)
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {rows.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 italic">Không có khác biệt trường để hiển thị.</p>
+                            ) : (
+                              <div className="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800 max-h-72 overflow-y-auto">
+                                <table className="w-full text-[11px]">
+                                  <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 sticky top-0">
+                                    <tr>
+                                      <th className="text-left font-bold px-2 py-1.5">Trường</th>
+                                      <th className="text-left font-bold px-2 py-1.5">Trước</th>
+                                      <th className="text-left font-bold px-2 py-1.5">Sau</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {rows.map((change) =>
+                                      change.field === HISTORY_MORE_FIELD ? (
+                                        <tr key={`${entry.id}-${change.field}`}>
+                                          <td
+                                            colSpan={3}
+                                            className="px-2 py-1.5 text-[11px] italic text-slate-500 dark:text-slate-400"
+                                          >
+                                            …{change.after || 'còn thay đổi khác'}
+                                            {hasSnapshots
+                                              ? ' — bấm «Xem đủ các trường từ snapshot» ở trên'
+                                              : ' (không có snapshot để mở rộng)'}
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        <tr key={`${entry.id}-${change.field}`}>
+                                          <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                            {change.field}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-rose-700/90 dark:text-rose-300 break-all">
+                                            {change.before ?? '—'}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-emerald-700/90 dark:text-emerald-300 break-all">
+                                            {change.after ?? '—'}
+                                          </td>
+                                        </tr>
+                                      )
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                       {(() => {
                         const availability = describeUndoAvailability(entry);
                         return (
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             {availability.canUndo ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setUndoError('');
-                                  setUndoMessage('');
-                                  setConfirmEntry(entry);
-                                }}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 cursor-pointer hover:bg-amber-500/15"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                Hoàn tác
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setUndoError('');
+                                    setUndoMessage('');
+                                    setConfirmEntry(entry);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 cursor-pointer hover:bg-amber-500/15"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  Hoàn tác
+                                </button>
+                                {isPartialSecretPreservingUpdate(entry) && (
+                                  <p className="text-[10px] text-amber-800/80 dark:text-amber-200/80 max-w-xl">
+                                    {PARTIAL_UPDATE_RESTORE_NOTE}
+                                  </p>
+                                )}
+                              </>
                             ) : (
                               <p className="text-[11px] text-slate-400 italic max-w-xl">
                                 {availability.reason}
@@ -332,6 +391,11 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                   Thao tác này sẽ đảo ngược thay đổi trên bản ghi nghiệp vụ nếu dữ liệu hiện tại vẫn khớp trạng thái sau khi sửa.
                 </p>
+                {isPartialSecretPreservingUpdate(confirmEntry) && (
+                  <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-200">
+                    {PARTIAL_UPDATE_RESTORE_NOTE}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -349,27 +413,37 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
               </p>
               <p className="mt-0.5 text-slate-600 dark:text-slate-300">{confirmEntry.entityLabel}</p>
               <p className="mt-0.5 font-mono text-slate-400">id {confirmEntry.entityId}</p>
-              {confirmEntry.changes.length > 0 && (
-                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                  {confirmEntry.changes.map((change) =>
-                    change.field === HISTORY_MORE_FIELD ? (
-                      <li
-                        key={`${confirmEntry.id}-confirm-${change.field}`}
-                        className="italic text-slate-500 dark:text-slate-400"
-                      >
-                        …{change.after || 'còn thay đổi khác'} (hoàn tác dùng snapshot đầy đủ)
-                      </li>
-                    ) : (
-                      <li key={`${confirmEntry.id}-confirm-${change.field}`} className="font-mono">
-                        <span className="text-slate-500">{change.field}</span>:{' '}
-                        <span className="text-rose-600 dark:text-rose-300">{change.before ?? '—'}</span>
-                        {' → '}
-                        <span className="text-emerald-600 dark:text-emerald-300">{change.after ?? '—'}</span>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
+              {(() => {
+                const hasSnapshots = !!(confirmEntry.beforeSnapshot || confirmEntry.afterSnapshot);
+                const rows = hasSnapshots
+                  ? changesForEntry(confirmEntry, true)
+                  : confirmEntry.changes;
+                if (rows.length === 0) return null;
+                return (
+                  <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                    {rows.map((change) =>
+                      change.field === HISTORY_MORE_FIELD ? (
+                        <li
+                          key={`${confirmEntry.id}-confirm-${change.field}`}
+                          className="italic text-slate-500 dark:text-slate-400"
+                        >
+                          …{change.after || 'còn thay đổi khác'}
+                        </li>
+                      ) : (
+                        <li key={`${confirmEntry.id}-confirm-${change.field}`} className="font-mono">
+                          <span className="text-slate-500">{change.field}</span>:{' '}
+                          <span className="text-rose-600 dark:text-rose-300">{change.before ?? '—'}</span>
+                          {' → '}
+                          <span className="text-emerald-600 dark:text-emerald-300">{change.after ?? '—'}</span>
+                        </li>
+                      )
+                    )}
+                    {hasSnapshots && confirmEntry.changes.some((c) => c.field === HISTORY_MORE_FIELD) && (
+                      <li className="italic text-slate-400">Đang hiện đủ trường từ snapshot để xác nhận hoàn tác.</li>
+                    )}
+                  </ul>
+                );
+              })()}
             </div>
             <div className="mt-3 flex justify-end gap-2">
               <button

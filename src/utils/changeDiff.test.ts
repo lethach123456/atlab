@@ -5,6 +5,7 @@ import {
   HISTORY_MORE_FIELD,
   buildEntityLabel,
   buildFieldChanges,
+  buildInspectFieldChanges,
   sanitizeHistoryRecord,
   stringifyHistoryValue,
 } from './changeDiff.ts';
@@ -81,4 +82,15 @@ test('buildFieldChanges does not add sentinel when within cap', () => {
   const changes = buildFieldChanges(null, { a: 1, b: 2, c: 3 }, 'create');
   assert.equal(changes.some((c) => c.field === HISTORY_MORE_FIELD), false);
   assert.ok(changes.length <= HISTORY_CHANGES_RULES_MAX);
+});
+
+test('buildInspectFieldChanges is uncapped for UI snapshot inspection', () => {
+  const after: Record<string, unknown> = {};
+  for (let i = 0; i < 18; i += 1) after[`f${String(i).padStart(2, '0')}`] = `v${i}`;
+  const capped = buildFieldChanges(null, after, 'create');
+  const full = buildInspectFieldChanges(null, after, 'create');
+  assert.equal(capped.length, HISTORY_CHANGES_RULES_MAX);
+  assert.equal(capped.some((c) => c.field === HISTORY_MORE_FIELD), true);
+  assert.equal(full.length, 18);
+  assert.equal(full.some((c) => c.field === HISTORY_MORE_FIELD), false);
 });

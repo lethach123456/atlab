@@ -15,6 +15,7 @@ import {
   valuesEqualForUndo,
   type UndoSnapshot,
 } from '../utils/changeUndo';
+import { REDACT_FIELDS } from '../utils/changeDiff';
 import {
   CHANGE_HISTORY_COLLECTION,
   buildHistoryDocument,
@@ -140,6 +141,14 @@ export async function undoChangeHistoryEntry(input: {
       if (!entitySnap.exists()) {
         throw new Error('Bản ghi tạo mới không còn tồn tại.');
       }
+      // Refuse delete-undo when live doc has secrets the snapshot could not verify.
+      for (const key of Object.keys(current)) {
+        if (REDACT_FIELDS.has(key) && current[key] !== undefined && current[key] !== null && String(current[key]).length > 0) {
+          throw new Error(
+            'Bản ghi có trường bảo mật không nằm trong snapshot — không xóa hoàn tác an toàn.'
+          );
+        }
+      }
       for (const [field, expected] of Object.entries(afterSnapshot)) {
         if (!valuesEqualForUndo(current[field], expected)) {
           throw new Error(
@@ -156,6 +165,12 @@ export async function undoChangeHistoryEntry(input: {
       if (!beforeSnapshot) throw new Error('Thiếu snapshot lúc xóa.');
       if (entitySnap.exists()) {
         throw new Error('Bản ghi đã được tạo lại hoặc tồn tại khác, không khôi phục đè được.');
+      }
+      // Snapshot must not be used to recreate docs that originally carried secrets.
+      for (const key of Object.keys(beforeSnapshot)) {
+        if (REDACT_FIELDS.has(key)) {
+          throw new Error('Snapshot chứa trường bảo mật không hợp lệ — từ chối khôi phục.');
+        }
       }
       const restore: DocumentData = {
         ...beforeSnapshot,

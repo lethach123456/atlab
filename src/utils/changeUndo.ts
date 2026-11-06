@@ -63,35 +63,85 @@ function cloneSnapshotValue(value: unknown): { ok: true; value: unknown } | { ok
   return { ok: false, reason: 'Kiểu dữ liệu lồng nhau không hỗ trợ hoàn tác an toàn.' };
 }
 
-/** Build a bounded lossless snapshot, or explain why undo cannot be offered. */
+export interface UndoSnapshotBuild {
+  snapshot: UndoSnapshot | null;
+  incompleteReason: string;
+  /** Redacted keys present on the source record (never stored in snapshot). */
+  omittedRedactedKeys: string[];
+}
+
+function listRedactedKeys(record: Record<string, unknown> | null | undefined): string[] {
+  if (!record) return [];
+  return Object.keys(record)
+    .filter((key) => REDACT_FIELDS.has(key) && record[key] !== undefined)
+    .sort();
+}
+
+/** Compare redacted field values without depending on valuesEqualForUndo order. */
+function redactedValueEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a === 'string' && typeof b === 'string') return a === b;
+  if (typeof a === 'number' && typeof b === 'number') return a === b || (Number.isNaN(a) && Number.isNaN(b));
+  return false;
+}
+
+function redactedFieldsDiffer(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined
+): boolean {
+  const keys = new Set([...listRedactedKeys(before), ...listRedactedKeys(after)]);
+  for (const key of keys) {
+    const left = before?.[key];
+    const right = after?.[key];
+    if (!redactedValueEqual(left === undefined ? null : left, right === undefined ? null : right)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Build a bounded snapshot for undo. Redacted keys are never stored.
+ * Callers must treat create/delete with omitted redacts as non-undoable.
+ */
 export function buildUndoSnapshot(
   record: Record<string, unknown> | null | undefined
-): { snapshot: UndoSnapshot | null; incompleteReason: string } {
-  if (!record) return { snapshot: null, incompleteReason: '' };
+): UndoSnapshotBuild {
+  if (!record) return { snapshot: null, incompleteReason: '', omittedRedactedKeys: [] };
+  const omittedRedactedKeys = listRedactedKeys(record);
   const snapshot: UndoSnapshot = {};
   let fields = 0;
   for (const [key, value] of Object.entries(record)) {
     if (DIFF_SKIP_FIELDS.has(key)) continue;
-    if (REDACT_FIELDS.has(key)) {
-      return {
-        snapshot: null,
-        incompleteReason: 'Bản ghi có trường bảo mật/nhạy cảm nên không lưu đủ để hoàn tác.',
-      };
-    }
+    if (REDACT_FIELDS.has(key)) continue;
     if (value === undefined) continue;
     const cloned = cloneSnapshotValue(value);
-    if (!cloned.ok) return { snapshot: null, incompleteReason: cloned.reason };
+    if (!cloned.ok) {
+      return { snapshot: null, incompleteReason: cloned.reason, omittedRedactedKeys };
+    }
     snapshot[key] = cloned.value;
     fields += 1;
     if (fields > SNAPSHOT_MAX_FIELDS) {
       return {
         snapshot: null,
         incompleteReason: 'Quá nhiều trường thay đổi nên không lưu đủ để hoàn tác an toàn.',
+        omittedRedactedKeys,
       };
     }
   }
-  return { snapshot, incompleteReason: '' };
+  return { snapshot, incompleteReason: '', omittedRedactedKeys };
 }
+
+const DESTRUCTIVE_REDACT_BLOCK =
+  'Có trường bảo mật/nhạy cảm nên không hoàn tác tạo hoặc xóa an toàn (snapshot thiếu trường đó).';
+const REDACT_CHANGED_BLOCK =
+  'Trường bảo mật đã đổi trong lần sửa này nên không hoàn tác an toàn được.';
+const NO_SAFE_FIELD_BLOCK =
+  'Không có trường an toàn để hoàn tác (chỉ đổi trường nhạy cảm hoặc không có khác biệt).';
+
+/** UI copy when update undo omits unchanged secrets (merge preserves them). */
+export const PARTIAL_UPDATE_RESTORE_NOTE =
+  'Hoàn tác một phần: chỉ đảo các trường đã theo dõi; trường bảo mật (nếu có) được giữ nguyên trên máy chủ.';
 
 export function buildRollbackPlan(
   action: ChangeAction,
@@ -127,11 +177,44 @@ export function buildRollbackPlan(
     };
   }
 
+  const omittedAny =
+    beforeBuilt.omittedRedactedKeys.length > 0 || afterBuilt.omittedRedactedKeys.length > 0;
+
+  // Destructive undo needs a complete document picture — refuse if secrets were omitted.
+  if (action === 'create' || action === 'delete') {
+    if (omittedAny) {
+      return {
+        canUndo: false,
+        undoBlockReason: DESTRUCTIVE_REDACT_BLOCK,
+        beforeSnapshot: null,
+        afterSnapshot: null,
+      };
+    }
+  }
+
   if (action === 'update') {
     if (!beforeBuilt.snapshot || !afterBuilt.snapshot) {
       return {
         canUndo: false,
         undoBlockReason: 'Thiếu snapshot trước/sau nên không hoàn tác được cập nhật này.',
+        beforeSnapshot: beforeBuilt.snapshot,
+        afterSnapshot: afterBuilt.snapshot,
+      };
+    }
+    // Secrets must be unchanged; update() merge leaves them untouched.
+    if (redactedFieldsDiffer(before, after)) {
+      return {
+        canUndo: false,
+        undoBlockReason: REDACT_CHANGED_BLOCK,
+        beforeSnapshot: null,
+        afterSnapshot: null,
+      };
+    }
+    const safeChanges = changedFieldsToVerify(beforeBuilt.snapshot, afterBuilt.snapshot);
+    if (safeChanges.length === 0) {
+      return {
+        canUndo: false,
+        undoBlockReason: NO_SAFE_FIELD_BLOCK,
         beforeSnapshot: beforeBuilt.snapshot,
         afterSnapshot: afterBuilt.snapshot,
       };
@@ -188,6 +271,24 @@ export function valuesEqualForUndo(a: unknown, b: unknown): boolean {
   return false;
 }
 
+/** True when any redacted field value differs between before/after (including add/remove). */
+export function redactedFieldsChanged(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined
+): boolean {
+  return redactedFieldsDiffer(before, after);
+}
+
+/** Whether an undoable update may leave secrets untouched (for UI copy). */
+export function isPartialSecretPreservingUpdate(entry: {
+  action: ChangeAction;
+  canUndo?: boolean;
+  beforeSnapshot?: UndoSnapshot | null;
+  afterSnapshot?: UndoSnapshot | null;
+}): boolean {
+  return entry.action === 'update' && entry.canUndo === true;
+}
+
 /** Fields that must still equal the original "after" snapshot before undoing an update. */
 export function changedFieldsToVerify(
   beforeSnapshot: UndoSnapshot,
@@ -227,6 +328,22 @@ export function buildUpdateUndoPatch(
     else patch[field] = null; // signal delete field — caller maps to deleteField()
   }
   return patch;
+}
+
+
+/** Simulate Firestore update() merge for tests — secrets not in patch stay put. */
+export function applyUpdateUndoMerge(
+  current: Record<string, unknown>,
+  beforeSnapshot: UndoSnapshot,
+  afterSnapshot: UndoSnapshot
+): Record<string, unknown> {
+  const patch = buildUpdateUndoPatch(beforeSnapshot, afterSnapshot);
+  const next: Record<string, unknown> = { ...current };
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === null) delete next[field];
+    else next[field] = value;
+  }
+  return next;
 }
 
 export function assessLegacyUndoAvailability(entry: {

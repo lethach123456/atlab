@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assessLegacyUndoAvailability,
+  applyUpdateUndoMerge,
   buildRollbackPlan,
   buildUpdateUndoPatch,
   findUpdateConflicts,
+  redactedFieldsChanged,
   undoHistoryDocId,
   valuesEqualForUndo,
 } from './changeUndo';
@@ -27,15 +29,75 @@ test('users entity is never undoable', () => {
   assert.match(plan.undoBlockReason, /tài khoản|quyền|bảo mật/i);
 });
 
-test('secret fields block snapshot rather than store placeholders', () => {
+test('settings update with unchanged bank: canUndo and merge preserves bank number', () => {
+  const before = { labName: 'AT', bankAccountNumber: '123456', hotline: '090' };
+  const after = { labName: 'AT Lab', bankAccountNumber: '123456', hotline: '090' };
+  const plan = buildRollbackPlan('update', 'settings', before, after);
+  assert.equal(plan.canUndo, true);
+  assert.deepEqual(plan.beforeSnapshot, { labName: 'AT', hotline: '090' });
+  assert.deepEqual(plan.afterSnapshot, { labName: 'AT Lab', hotline: '090' });
+  assert.equal('bankAccountNumber' in (plan.beforeSnapshot || {}), false);
+  const current = { ...after };
+  const restored = applyUpdateUndoMerge(current, plan.beforeSnapshot!, plan.afterSnapshot!);
+  assert.equal(restored.labName, 'AT');
+  assert.equal(restored.bankAccountNumber, '123456');
+  assert.equal(restored.hotline, '090');
+});
+
+test('settings update that also changes bank is not undoable', () => {
   const plan = buildRollbackPlan(
     'update',
     'settings',
-    { labName: 'AT', bankAccountNumber: '123' },
-    { labName: 'AT Lab', bankAccountNumber: '123' }
+    { labName: 'AT', bankAccountNumber: '111' },
+    { labName: 'AT Lab', bankAccountNumber: '222' }
   );
   assert.equal(plan.canUndo, false);
   assert.match(plan.undoBlockReason, /bảo mật|nhạy cảm/i);
+  assert.equal(redactedFieldsChanged(
+    { bankAccountNumber: '111' },
+    { bankAccountNumber: '222' }
+  ), true);
+});
+
+test('settings deletion with bank secret must not be undoable (no incomplete recreate)', () => {
+  const plan = buildRollbackPlan(
+    'delete',
+    'settings',
+    { labName: 'AT', bankAccountNumber: '123456', hotline: '090' },
+    null
+  );
+  assert.equal(plan.canUndo, false);
+  assert.match(plan.undoBlockReason, /bảo mật|tạo hoặc xóa|nhạy cảm/i);
+  assert.equal(plan.beforeSnapshot, null);
+});
+
+test('create with redacted fields refuses unsafe delete-undo', () => {
+  const plan = buildRollbackPlan(
+    'create',
+    'settings',
+    null,
+    { labName: 'AT', bankAccountNumber: '123456', hotline: '090' }
+  );
+  assert.equal(plan.canUndo, false);
+  assert.match(plan.undoBlockReason, /bảo mật|tạo hoặc xóa|nhạy cảm/i);
+  assert.equal(plan.afterSnapshot, null);
+});
+
+test('all-redacted update is not a successful noop undo', () => {
+  const plan = buildRollbackPlan(
+    'update',
+    'settings',
+    { labName: 'AT', bankAccountNumber: '111' },
+    { labName: 'AT', bankAccountNumber: '222' }
+  );
+  assert.equal(plan.canUndo, false);
+  assert.match(plan.undoBlockReason, /bảo mật|an toàn|nhạy cảm|trường an toàn/i);
+});
+
+test('create without secrets remains undoable', () => {
+  const plan = buildRollbackPlan('create', 'cashflows', null, { title: 'Chi', amount: 1 });
+  assert.equal(plan.canUndo, true);
+  assert.deepEqual(plan.afterSnapshot, { title: 'Chi', amount: 1 });
 });
 
 test('conflict detection when current diverged from after snapshot', () => {
