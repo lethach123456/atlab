@@ -10,7 +10,7 @@ import {
   describeUndoAvailability,
   undoChangeHistoryEntry,
 } from '../services/changeHistoryUndo';
-import { ENTITY_LABELS, actionLabelVi, type ChangeAction } from '../utils/changeDiff';
+import { ENTITY_LABELS, HISTORY_MORE_FIELD, actionLabelVi, type ChangeAction } from '../utils/changeDiff';
 import { useNotify } from './AppNotifications';
 
 interface ChangeHistoryViewProps {
@@ -236,19 +236,30 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {entry.changes.map((change) => (
-                                <tr key={`${entry.id}-${change.field}`}>
-                                  <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                                    {change.field}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-rose-700/90 dark:text-rose-300 break-all">
-                                    {change.before ?? '—'}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-emerald-700/90 dark:text-emerald-300 break-all">
-                                    {change.after ?? '—'}
-                                  </td>
-                                </tr>
-                              ))}
+                              {entry.changes.map((change) =>
+                                change.field === HISTORY_MORE_FIELD ? (
+                                  <tr key={`${entry.id}-${change.field}`}>
+                                    <td
+                                      colSpan={3}
+                                      className="px-2 py-1.5 text-[11px] italic text-slate-500 dark:text-slate-400"
+                                    >
+                                      …{change.after || 'còn thay đổi khác'} (đủ để xem; hoàn tác dùng snapshot đầy đủ)
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  <tr key={`${entry.id}-${change.field}`}>
+                                    <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                      {change.field}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-rose-700/90 dark:text-rose-300 break-all">
+                                      {change.before ?? '—'}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-emerald-700/90 dark:text-emerald-300 break-all">
+                                      {change.after ?? '—'}
+                                    </td>
+                                  </tr>
+                                )
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -340,14 +351,23 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
               <p className="mt-0.5 font-mono text-slate-400">id {confirmEntry.entityId}</p>
               {confirmEntry.changes.length > 0 && (
                 <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                  {confirmEntry.changes.map((change) => (
-                    <li key={`${confirmEntry.id}-confirm-${change.field}`} className="font-mono">
-                      <span className="text-slate-500">{change.field}</span>:{' '}
-                      <span className="text-rose-600 dark:text-rose-300">{change.before ?? '—'}</span>
-                      {' → '}
-                      <span className="text-emerald-600 dark:text-emerald-300">{change.after ?? '—'}</span>
-                    </li>
-                  ))}
+                  {confirmEntry.changes.map((change) =>
+                    change.field === HISTORY_MORE_FIELD ? (
+                      <li
+                        key={`${confirmEntry.id}-confirm-${change.field}`}
+                        className="italic text-slate-500 dark:text-slate-400"
+                      >
+                        …{change.after || 'còn thay đổi khác'} (hoàn tác dùng snapshot đầy đủ)
+                      </li>
+                    ) : (
+                      <li key={`${confirmEntry.id}-confirm-${change.field}`} className="font-mono">
+                        <span className="text-slate-500">{change.field}</span>:{' '}
+                        <span className="text-rose-600 dark:text-rose-300">{change.before ?? '—'}</span>
+                        {' → '}
+                        <span className="text-emerald-600 dark:text-emerald-300">{change.after ?? '—'}</span>
+                      </li>
+                    )
+                  )}
                 </ul>
               )}
             </div>

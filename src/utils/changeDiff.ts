@@ -29,7 +29,16 @@ export const REDACT_FIELDS = new Set([
 ]);
 
 const MAX_VALUE_LEN = 300;
-const MAX_CHANGES = 40;
+
+/**
+ * Must stay in sync with firestore.rules `validHistoryChangesList` size bound.
+ * Emulator ceiling for full per-item validation + order write batch ≈ 7.
+ * Display diffs are capped here; beforeSnapshot/afterSnapshot stay lossless for undo.
+ */
+export const HISTORY_CHANGES_RULES_MAX = 7;
+/** Sentinel field name when display diffs are truncated (still a valid change item). */
+export const HISTORY_MORE_FIELD = '_more';
+const HISTORY_DETAILED_MAX = HISTORY_CHANGES_RULES_MAX - 1; // 6 detailed + optional sentinel
 
 export function stringifyHistoryValue(value: unknown): string | null {
   if (value === undefined || value === null) return null;
@@ -82,6 +91,7 @@ export function buildFieldChanges(
   const right = sanitizeHistoryRecord(after) || {};
   const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
   const changes: FieldChange[] = [];
+  let omitted = 0;
 
   for (const field of [...keys].sort()) {
     if (DIFF_SKIP_FIELDS.has(field) || REDACT_FIELDS.has(field) && action !== 'delete') {
@@ -98,8 +108,18 @@ export function buildFieldChanges(
     if (beforeText === afterText) continue;
     if (action === 'create' && afterText === null) continue;
     if (action === 'delete' && beforeText === null) continue;
+    if (changes.length >= HISTORY_DETAILED_MAX) {
+      omitted += 1;
+      continue;
+    }
     changes.push({ field, before: beforeText, after: afterText });
-    if (changes.length >= MAX_CHANGES) break;
+  }
+  if (omitted > 0) {
+    changes.push({
+      field: HISTORY_MORE_FIELD,
+      before: null,
+      after: `+${omitted} trường khác`,
+    });
   }
   return changes;
 }

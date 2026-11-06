@@ -95,7 +95,7 @@ export function buildHistoryDocument(input: {
   const actor = actorFields();
   const labelSource = input.action === 'delete' ? input.before : input.after || input.before;
   const entityLabel = buildEntityLabel(input.entityType, labelSource, input.entityId).slice(0, 300);
-  const changes = buildFieldChanges(input.before, input.after, input.action).slice(0, 40);
+  const changes = buildFieldChanges(input.before, input.after, input.action);
   const typeLabel = ENTITY_LABELS[input.entityType] || input.entityType;
   const summary = `${actionLabelVi(input.action)} ${typeLabel}: ${entityLabel}`.slice(0, 400);
   const id = input.forceId || newHistoryId();

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  HISTORY_CHANGES_RULES_MAX,
+  HISTORY_MORE_FIELD,
   buildEntityLabel,
   buildFieldChanges,
   sanitizeHistoryRecord,
@@ -58,4 +60,25 @@ test('buildEntityLabel prefers human fields', () => {
     'An · NS1'
   );
   assert.equal(buildEntityLabel('cashflows', { title: 'Mua phôi' }, 'x'), 'Mua phôi');
+});
+
+test('buildFieldChanges caps at HISTORY_CHANGES_RULES_MAX with _more sentinel', () => {
+  const after: Record<string, unknown> = {};
+  for (let i = 0; i < 18; i += 1) after[`f${String(i).padStart(2, '0')}`] = `v${i}`;
+  const changes = buildFieldChanges(null, after, 'create');
+  assert.equal(changes.length, HISTORY_CHANGES_RULES_MAX);
+  assert.equal(changes[changes.length - 1]?.field, HISTORY_MORE_FIELD);
+  assert.match(String(changes[changes.length - 1]?.after), /^\+\d+ trường khác$/);
+  const omitted = Number(String(changes[changes.length - 1]?.after).match(/\+(\d+)/)?.[1]);
+  assert.equal(omitted, 18 - (HISTORY_CHANGES_RULES_MAX - 1));
+  assert.equal(
+    changes.filter((c) => c.field !== HISTORY_MORE_FIELD).length,
+    HISTORY_CHANGES_RULES_MAX - 1
+  );
+});
+
+test('buildFieldChanges does not add sentinel when within cap', () => {
+  const changes = buildFieldChanges(null, { a: 1, b: 2, c: 3 }, 'create');
+  assert.equal(changes.some((c) => c.field === HISTORY_MORE_FIELD), false);
+  assert.ok(changes.length <= HISTORY_CHANGES_RULES_MAX);
 });
