@@ -2,9 +2,9 @@ import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
 import { DentalOrder, MaterialPriceConfig, ClinicMaterialPriceRow, ClinicPartner } from '../types/dental';
-import { exportToCSV } from '../services/storage';
 import { extractWarrantyYears } from '../utils/csvParser';
 import { getClinicOptions } from '../utils/clinicPartners';
+import { resolveOrderInvoiceExportScope } from '../utils/orderInvoiceExport';
 import {
   formatVND,
   sortMonthYearsDesc,
@@ -12,7 +12,7 @@ import {
 } from '../utils/financeUtils';
 import {
   Search,
-  Download,
+  FileDown,
   Plus,
   ShieldCheck,
   Printer,
@@ -73,6 +73,7 @@ interface OrderListViewProps {
   onDeleteOrder: (id: string) => void;
   onNewOrder: () => void;
   onQuickAdd: (data: Partial<DentalOrder>) => Promise<DentalOrder>;
+  onExportInvoicePdf: (orders: DentalOrder[], clinicName: string, monthYear: string) => void;
 }
 
 export const OrderListView: React.FC<OrderListViewProps> = ({
@@ -90,6 +91,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   onDeleteOrder,
   onNewOrder,
   onQuickAdd,
+  onExportInvoicePdf,
 }) => {
   const tableRef = useRef<HTMLTableElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -107,6 +109,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const [editError, setEditError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<boolean>(false);
+  const [exportNotice, setExportNotice] = useState('');
   const [fillRange, setFillRange] = useState<{ field: EditableField; start: number; end: number } | null>(null);
   const fillDrag = useRef<{ pointerId: number; field: EditableField; source: DentalOrder; start: number; end: number; value: string } | null>(null);
 
@@ -252,12 +255,20 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     setSelectedIds(next);
   };
 
-  const handleExport = () => {
-    const toExport =
-      selectedIds.size > 0
-        ? orders.filter((o) => selectedIds.has(o.id))
-        : filteredOrders;
-    exportToCSV(toExport, `AT_DENTAL_LAB_${toExport.length}_ORDERS.csv`);
+  const handleExportInvoicePdf = () => {
+    const scope = resolveOrderInvoiceExportScope({
+      allOrders: orders,
+      filteredOrders,
+      selectedIds,
+      selectedMonth,
+    });
+    if (scope.orders.length === 0) {
+      setExportNotice('Không có đơn hàng để xuất hóa đơn PDF.');
+      window.setTimeout(() => setExportNotice(''), 2500);
+      return;
+    }
+    setExportNotice('');
+    onExportInvoicePdf(scope.orders, scope.clinicName, scope.monthYear);
   };
 
   const handleBulkDelete = () => {
@@ -526,11 +537,14 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           )}
 
           <button
-            onClick={handleExport}
+            type="button"
+            onClick={handleExportInvoicePdf}
+            title="Xuất hóa đơn PDF"
+            aria-label="Xuất hóa đơn PDF"
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200 rounded-xl cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            CSV
+            <FileDown className="w-3.5 h-3.5" />
+            HĐ PDF
           </button>
 
           {!readOnly && (
@@ -544,6 +558,12 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           )}
         </div>
       </div>
+
+      {exportNotice ? (
+        <p role="status" className="text-xs font-medium text-amber-700 dark:text-amber-300 px-1">
+          {exportNotice}
+        </p>
+      ) : null}
 
       {/* 4 Deep Dark-Jewel KPI Cards for Orders */}
       <div className="dashboard-kpis grid min-w-0 grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">

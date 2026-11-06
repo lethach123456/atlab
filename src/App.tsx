@@ -997,6 +997,9 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 onDeleteOrder={handleDeleteOrder}
                 onNewOrder={() => handleOpenNewOrder()}
                 onQuickAdd={handleQuickAddOrder}
+                onExportInvoicePdf={(ords, clinic, month) =>
+                  handleOpenInvoicePdf(ords, clinic, month)
+                }
               />
             )}
 
