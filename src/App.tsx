@@ -965,6 +965,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 clinicNames={clinicNames}
                 clinicPartners={clinicPartners}
                 materialPrices={materialPrices}
+                clinicMaterialPrices={clinicMaterialPrices}
                 onViewWarranty={(order) => setWarrantyModalOrder(order)}
                 onPrintTicket={(order) => setTicketModalOrder(order)}
                 onEditOrder={handleEditOrder}

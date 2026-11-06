@@ -1,7 +1,7 @@
 import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
-import { DentalOrder, MaterialPriceConfig, ClinicPartner } from '../types/dental';
+import { DentalOrder, MaterialPriceConfig, ClinicMaterialPriceRow, ClinicPartner } from '../types/dental';
 import { exportToCSV } from '../services/storage';
 import { extractWarrantyYears } from '../utils/csvParser';
 import { getClinicOptions } from '../utils/clinicPartners';
@@ -65,6 +65,7 @@ interface OrderListViewProps {
   clinicNames: string[];
   clinicPartners: ClinicPartner[];
   materialPrices: MaterialPriceConfig[];
+  clinicMaterialPrices?: ClinicMaterialPriceRow[];
   onViewWarranty: (order: DentalOrder) => void;
   onPrintTicket: (order: DentalOrder) => void;
   onEditOrder: (order: DentalOrder) => void;
@@ -81,6 +82,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   clinicNames,
   clinicPartners,
   materialPrices,
+  clinicMaterialPrices = [],
   onViewWarranty,
   onPrintTicket,
   onEditOrder,
@@ -866,6 +868,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       {!readOnly && (
         <QuickOrderEntry columns={orderColumns} materials={catalogMaterialNames}
           tableRef={tableRef} tableScrollRef={tableScrollRef}
+          materialPrices={materialPrices}
+          clinicMaterialPrices={clinicMaterialPrices}
           clinics={clinicNames.map((name) => ({
             name,
             address: clinicAddresses.get(name) ?? '',

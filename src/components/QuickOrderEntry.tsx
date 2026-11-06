@@ -1,9 +1,13 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronUp, Plus, X } from 'lucide-react';
 import { FdiTeethPicker } from './FdiTeethPicker';
-import type { DentalOrder } from '../types/dental';
+import type { ClinicMaterialPriceRow, DentalOrder, MaterialPriceConfig } from '../types/dental';
 import { extractWarrantyYears } from '../utils/csvParser';
 import { parseTeethNotation } from '../utils/fdiTeeth';
+import {
+  getUnitPriceForMaterial,
+  resolveMaterialPricesForClinic,
+} from '../utils/financeUtils';
 
 interface QuickOrderValues {
   warrantyCode: string;
@@ -20,12 +24,23 @@ interface QuickOrderValues {
 
 export type QuickOrderField = keyof QuickOrderValues;
 
+const SUGGESTED_BADGE_MS = 1800;
+
+function parseAmountInput(raw: string): number {
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+  const n = Number(trimmed.replace(/\./g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
 interface QuickOrderEntryProps {
   columns: { field: QuickOrderField; label: string }[];
   tableRef: React.RefObject<HTMLTableElement | null>;
   tableScrollRef: React.RefObject<HTMLDivElement | null>;
   clinics: { name: string; address: string }[];
   materials: string[];
+  materialPrices?: MaterialPriceConfig[];
+  clinicMaterialPrices?: ClinicMaterialPriceRow[];
   onAdd: (data: Partial<DentalOrder>) => Promise<DentalOrder>;
 }
 
@@ -44,7 +59,10 @@ function todayDate() {
 
 const warranties = ['1 năm', '2 năm', '3 năm', '5 năm', '7 năm', '10 năm', '15 năm', '20 năm', '26 năm', '50 năm', 'Trọn đời'];
 
-export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, materials, onAdd }: QuickOrderEntryProps) {
+export function QuickOrderEntry({
+  columns, tableRef, tableScrollRef, clinics, materials,
+  materialPrices = [], clinicMaterialPrices = [], onAdd,
+}: QuickOrderEntryProps) {
   const panelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -64,9 +82,61 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
   const saving = useRef(false);
   const codeInput = useRef<HTMLInputElement>(null);
+  const lastSuggestionRef = useRef(0);
+  const totalAmountRef = useRef(0);
+  const badgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expanded = hovered || pinned || formFocused || pickerOpen || busy;
+
+  totalAmountRef.current = parseAmountInput(values.totalAmount);
+
+  const catalogForClinic = useMemo(
+    () => resolveMaterialPricesForClinic(values.clinicName, materialPrices, clinicMaterialPrices),
+    [values.clinicName, materialPrices, clinicMaterialPrices],
+  );
+
+  const suggestedUnitPrice = useMemo(() => {
+    if (!values.clinicName.trim() || !values.material.trim()) return 0;
+    return getUnitPriceForMaterial(values.material, catalogForClinic);
+  }, [values.clinicName, values.material, catalogForClinic]);
+
+  const suggestedTotal = useMemo(() => {
+    if (suggestedUnitPrice <= 0) return 0;
+    const count = Math.max(0, Number(values.teethCount) || 0);
+    return count * suggestedUnitPrice;
+  }, [suggestedUnitPrice, values.teethCount]);
+
+  const flashSuggestedBadge = () => {
+    if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
+    setShowSuggestedBadge(true);
+    badgeTimerRef.current = setTimeout(() => {
+      setShowSuggestedBadge(false);
+      badgeTimerRef.current = null;
+    }, SUGGESTED_BADGE_MS);
+  };
+
+  useEffect(() => {
+    if (suggestedTotal <= 0) return;
+    const current = totalAmountRef.current;
+    const prev = lastSuggestionRef.current;
+    if (current === suggestedTotal) {
+      lastSuggestionRef.current = suggestedTotal;
+      return;
+    }
+    if (current === 0 || current === prev) {
+      setValues((v) => ({ ...v, totalAmount: String(suggestedTotal) }));
+      lastSuggestionRef.current = suggestedTotal;
+      flashSuggestedBadge();
+    }
+  }, [suggestedTotal]);
+
+  useEffect(() => {
+    return () => {
+      if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -146,6 +216,13 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
   function update(field: QuickOrderField, value: string) {
     setError('');
     setNotice('');
+    if (field === 'totalAmount') {
+      if (badgeTimerRef.current) {
+        clearTimeout(badgeTimerRef.current);
+        badgeTimerRef.current = null;
+      }
+      setShowSuggestedBadge(false);
+    }
     setValues((current) => {
       if (field === 'teeth') {
         const parsed = parseTeethNotation(value);
@@ -199,12 +276,24 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
         warrantyPeriod: values.warrantyPeriod,
         warrantyYears: extractWarrantyYears(values.warrantyPeriod),
         totalAmount: amount,
-        unitPrice: 0,
+        unitPrice: suggestedUnitPrice > 0 ? suggestedUnitPrice : 0,
         toothForm: '',
         status: '',
         notes: values.notes.trim(),
       });
-      setValues((current) => ({ ...current, warrantyCode: '', patientName: '', teeth: '', teethCount: '1', totalAmount: '', notes: '' }));
+      const nextSuggested = suggestedUnitPrice > 0 ? suggestedUnitPrice : 0;
+      setValues((current) => ({
+        ...current,
+        warrantyCode: '',
+        patientName: '',
+        teeth: '',
+        teethCount: '1',
+        totalAmount: nextSuggested > 0 ? String(nextSuggested) : '',
+        notes: '',
+      }));
+      lastSuggestionRef.current = nextSuggested;
+      if (nextSuggested > 0) flashSuggestedBadge();
+      else setShowSuggestedBadge(false);
       setPickerOpen(false);
       setNotice(`Đã thêm ${created.warrantyCode} — ${created.patientName}.`);
       setFormFocused(true);
@@ -295,8 +384,18 @@ export function QuickOrderEntry({ columns, tableRef, tableScrollRef, clinics, ma
                     <td aria-hidden="true" />
                     {columns.map(({ field, label }) => (
                       <td key={field} className="px-1 align-bottom">
-                        <label className="flex min-w-0 flex-col gap-1">
-                          <span className="whitespace-nowrap text-[10px] font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+                        <label className="relative flex min-w-0 flex-col gap-1">
+                          <span className={`whitespace-nowrap text-[10px] font-semibold text-slate-600 dark:text-slate-300${field === 'totalAmount' ? ' pr-12' : ''}`}>{label}</span>
+                          {field === 'totalAmount' && (
+                            <span
+                              aria-hidden={!showSuggestedBadge}
+                              className={`pointer-events-none absolute right-0 top-0 text-[9px] font-semibold uppercase tracking-wide text-teal-600/80 transition-opacity duration-300 ${
+                                showSuggestedBadge ? 'opacity-100' : 'opacity-0'
+                              }`}
+                            >
+                              đề xuất
+                            </span>
+                          )}
                           {field === 'clinicName' ? (
                             <select aria-label="Nhập nhanh Nha khoa" value={values.clinicName} onChange={(event) => update(field, event.target.value)} required disabled={busy} className={inputClass}>
                               <option value="">Chọn nha khoa</option>
