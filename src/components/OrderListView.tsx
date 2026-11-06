@@ -33,6 +33,8 @@ import {
   Layers,
   Calendar,
   Edit3,
+  Copy,
+  MoreVertical,
 } from 'lucide-react';
 
 type SortField = 'id' | 'createdAt' | 'orderDate' | 'warrantyCode' | 'patientName' | 'clinicName' | 'teethCount' | 'totalAmount';
@@ -75,6 +77,7 @@ interface OrderListViewProps {
   onEditOrder: (order: DentalOrder) => void;
   onUpdateOrder: (updated: DentalOrder) => void | Promise<void>;
   onDeleteOrder: (id: string) => void;
+  onDuplicateOrder?: (order: DentalOrder) => void | Promise<void>;
   onNewOrder: () => void;
   onQuickAdd: (data: Partial<DentalOrder>) => Promise<DentalOrder>;
   onExportInvoicePdf: (orders: DentalOrder[], clinicName: string, monthYear: string) => void;
@@ -93,6 +96,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   onEditOrder,
   onUpdateOrder,
   onDeleteOrder,
+  onDuplicateOrder,
   onNewOrder,
   onQuickAdd,
   onExportInvoicePdf,
@@ -115,6 +119,9 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const [cellSaving, setCellSaving] = useState(false);
   const cellSavingRef = useRef(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ orderId: string; x: number; y: number } | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const rowMenuRef = useRef<HTMLDivElement>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<boolean>(false);
   const [exportNotice, setExportNotice] = useState('');
   const [fillRange, setFillRange] = useState<{ field: EditableField; start: number; end: number } | null>(null);
@@ -507,6 +514,51 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     return { totalRevenue, totalTeeth, activeClinics };
   }, [filteredOrders]);
 
+
+  const closeRowMenu = () => setRowMenu(null);
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeRowMenu();
+    };
+    const onPointer = (event: MouseEvent | PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (rowMenuRef.current?.contains(target)) return;
+      closeRowMenu();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, [rowMenu]);
+
+  const openRowMenuAt = (orderId: string, clientX: number, clientY: number) => {
+    if (readOnly) return;
+    const pad = 8;
+    const menuW = 200;
+    const menuH = 140;
+    const x = Math.min(clientX, window.innerWidth - menuW - pad);
+    const y = Math.min(clientY, window.innerHeight - menuH - pad);
+    setRowMenu({ orderId: orderId, x: Math.max(pad, x), y: Math.max(pad, y) });
+  };
+
+  const menuOrder = rowMenu ? orders.find((item) => item.id === rowMenu.orderId) : null;
+
+  const runDuplicate = async (order: DentalOrder) => {
+    if (!onDuplicateOrder || readOnly || duplicatingId) return;
+    setDuplicatingId(order.id);
+    closeRowMenu();
+    try {
+      await onDuplicateOrder(order);
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-16">
       {/* Compact Spatial Top Bar: Month Select and New Order Action */}
@@ -789,7 +841,17 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                   <tr
                     key={order.id}
                     data-order-id={order.id}
-                    className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
+                    onContextMenu={(event) => {
+                      const target = event.target;
+                      if (target instanceof HTMLElement) {
+                        const tag = target.closest('input, textarea, select, button, a, [contenteditable="true"]');
+                        if (tag) return;
+                      }
+                      if (readOnly) return;
+                      event.preventDefault();
+                      openRowMenuAt(order.id, event.clientX, event.clientY);
+                    }}
+                    className={`group hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
                       isChecked
                         ? 'bg-teal-500/10'
                         : isRecent
@@ -817,6 +879,23 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                     ))}
                     <td className="py-2 px-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            title="Thêm thao tác"
+                            aria-label="Thêm thao tác dòng"
+                            aria-haspopup="menu"
+                            aria-expanded={rowMenu?.orderId === order.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              openRowMenuAt(order.id, rect.left, rect.bottom + 4);
+                            }}
+                            className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => onViewWarranty(order)}
                           title="Thẻ Bảo Hành"
@@ -926,6 +1005,51 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           </div>
         </div>
       </div>
+
+      {rowMenu && menuOrder && !readOnly && (
+        <div
+          ref={rowMenuRef}
+          role="menu"
+          aria-label="Thao tác dòng đơn hàng"
+          className="fixed z-[90] min-w-[11.5rem] overflow-hidden rounded-[10px] border border-slate-200 bg-white py-1 text-sm shadow-[0_12px_32px_-12px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-slate-900"
+          style={{ left: rowMenu.x, top: rowMenu.y }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={Boolean(duplicatingId)}
+            onClick={() => { void runDuplicate(menuOrder); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {duplicatingId === menuOrder.id ? 'Đang nhân đôi…' : 'Nhân đôi dòng'}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { closeRowMenu(); onEditOrder(menuOrder); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Edit className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Sửa đơn
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeRowMenu();
+              const ok = window.confirm(
+                `Xóa đơn ${menuOrder.warrantyCode || ''} — ${menuOrder.patientName || ''}?`
+              );
+              if (ok) onDeleteOrder(menuOrder.id);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+          >
+            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Xóa dòng
+          </button>
+        </div>
+      )}
       {!readOnly && (
         <QuickOrderEntry columns={orderColumns} materials={catalogMaterialNames}
           tableRef={tableRef} tableScrollRef={tableScrollRef}

@@ -4,6 +4,7 @@ import type { MaterialPriceConfig } from '../types/dental';
 import { attachClinicMetaToPrices } from './financeUtils';
 import {
   explainOrderAmountSuggestion,
+  formatSuggestionUnitQty,
   resolvePriceSourceForMaterial,
 } from './orderPriceTransparency';
 
@@ -140,4 +141,31 @@ test('incomplete clinic/material shows choose-keys message', () => {
   });
   assert.equal(expl.source, 'unavailable');
   assert.match(expl.calculationText, /Chọn nha khoa/i);
+});
+
+test('compactHint is Đề xuất unit × qty without currency or source', () => {
+  assert.equal(formatSuggestionUnitQty(300000, 1), 'Đề xuất 300.000 × 1');
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Full Zirconia',
+    quantity: 1,
+    enteredAmount: 390000,
+    sharedPrices: shared,
+    clinicRows: [],
+  });
+  assert.equal(expl.compactHint, 'Đề xuất 390.000 × 1');
+  assert.doesNotMatch(expl.compactHint, /₫|Giá chung|Giá riêng|=/);
+});
+
+test('compactHint appends · tay when session manual differs', () => {
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Full Zirconia',
+    quantity: 1,
+    enteredAmount: 100000,
+    sharedPrices: shared,
+    clinicRows: [],
+    sessionManual: true,
+  });
+  assert.equal(expl.compactHint, 'Đề xuất 390.000 × 1 · tay');
 });

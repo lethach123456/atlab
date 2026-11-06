@@ -29,8 +29,10 @@ export interface OrderPriceExplanation {
   calculationText: string;
   relation: OrderAmountRelation;
   relationLabel: string | null;
-  /** Concise helper under the amount field. */
+  /** Concise helper under the amount field (legacy / detailed). */
   helpText: string;
+  /** Label-row hint: "Đề xuất 300.000 × 1" (+ optional · tay/· khác). */
+  compactHint: string;
 }
 
 function matchMaterial(
@@ -42,6 +44,15 @@ function matchMaterial(
   return configs.find(
     (row) => row.name.toLowerCase() === lower || row.materialKey.toLowerCase() === lower
   );
+}
+
+
+/** Unit × qty only — Vietnamese thousands separators, no ₫ / source / total. */
+export function formatSuggestionUnitQty(unitPrice: number, quantity: number): string {
+  if (!(unitPrice > 0) || !Number.isFinite(unitPrice)) return '';
+  const qty = Math.max(0, Math.trunc(Number(quantity) || 0));
+  const unit = new Intl.NumberFormat('vi-VN').format(Math.round(unitPrice));
+  return `Đề xuất ${unit} × ${qty}`;
 }
 
 export function clinicRowForMaterial(
@@ -163,6 +174,13 @@ export function explainOrderAmountSuggestion(input: {
   }
   const helpText = parts.filter(Boolean).join(' · ');
 
+  let compactHint = hasSuggestion ? formatSuggestionUnitQty(unitPrice, quantity) : '';
+  if (compactHint && relationLabel === 'Đã sửa tay') {
+    compactHint = `${compactHint} · tay`;
+  } else if (compactHint && relationLabel === 'Khác giá đề xuất') {
+    compactHint = `${compactHint} · khác`;
+  }
+
   return {
     source,
     sourceLabel,
@@ -174,6 +192,7 @@ export function explainOrderAmountSuggestion(input: {
     relation,
     relationLabel,
     helpText,
+    compactHint,
   };
 }
 

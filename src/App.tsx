@@ -74,6 +74,7 @@ import { subscribePayrolls, savePayrollRecord, deletePayrollRecord } from './ser
 import { accountError, createAccount, subscribeUsers, updateAccount } from './services/userAccounts';
 import { commitWorkspaceChanges, saveWorkspaceRecord, deleteWorkspaceRecord, subscribeWorkspaceData, WorkspaceChange } from './services/workspaceData';
 import { formatSaveError, newStableId } from './utils/reliableSave';
+import { buildOrderDuplicateInput } from './utils/orderDuplicate';
 import { NotificationProvider, useNotify } from './components/AppNotifications';
 
 export default function App() {
@@ -123,6 +124,8 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const seedingMaterialPricesRef = useRef(false);
   const seedCommitFailedRef = useRef(false);
   const [pendingWrites, setPendingWrites] = useState(0);
+  const duplicateOpsRef = useRef(new Map<string, string>());
+  const duplicateBusyRef = useRef(new Set<string>());
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [usersError, setUsersError] = useState('');
@@ -550,6 +553,59 @@ function Workspace({ profile }: { profile: UserProfile }) {
     if (!Object.keys(patch).length) return;
     await writeAwaited(saveWorkspaceRecord('orders', updated.id, patch, ownerId));
     setOrders(updateOrder({ ...current, ...patch }, orders));
+  };
+
+
+  const handleDuplicateOrder = async (source: DentalOrder) => {
+    if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
+    if (duplicateBusyRef.current.has(source.id)) return;
+    duplicateBusyRef.current.add(source.id);
+    let stableId = duplicateOpsRef.current.get(source.id);
+    if (!stableId) {
+      stableId = newStableId('order');
+      duplicateOpsRef.current.set(source.id, stableId);
+    }
+    try {
+      const data = buildOrderDuplicateInput(source, { id: stableId });
+      const { newOrder } = createOrder(
+        { ...data, id: stableId },
+        orders,
+        pricesForOrderClinic(data.clinicName || ''),
+        { persistLocal: false }
+      );
+      const toSave: DentalOrder = {
+        ...newOrder,
+        shade: data.shade,
+        technician: data.technician,
+        status: '',
+        paymentStatus: 'unpaid',
+        totalAmount: source.totalAmount ?? newOrder.totalAmount,
+        unitPrice: source.unitPrice ?? newOrder.unitPrice,
+      };
+      delete (toSave as { shippingFee?: number }).shippingFee;
+      await writeAwaited(saveWorkspaceRecord('orders', toSave.id, toSave, ownerId, true));
+      setOrders((current) => (current.some(({ id }) => id === toSave.id) ? current : [toSave, ...current]));
+      setCreatedOrder({ id: toSave.id, monthYear: toSave.monthYear });
+      duplicateOpsRef.current.delete(source.id);
+      notify({
+        tone: 'success',
+        title: 'Đã nhân đôi đơn',
+        message: `${toSave.warrantyCode} — ${toSave.patientName}`,
+      });
+    } catch (error) {
+      const message = formatSaveError(error, 'Chưa nhân đôi được đơn. Kiểm tra mạng rồi thử lại.');
+      notify({
+        tone: 'error',
+        title: 'Nhân đôi thất bại',
+        message,
+        persist: true,
+        actionLabel: 'Thử lại',
+        onAction: () => { void handleDuplicateOrder(source); },
+      });
+      throw new Error(message);
+    } finally {
+      duplicateBusyRef.current.delete(source.id);
+    }
   };
 
   const handleDeleteOrder = (id: string) => {
@@ -1045,6 +1101,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 onEditOrder={handleEditOrder}
                 onUpdateOrder={handleUpdateOrderDirect}
                 onDeleteOrder={handleDeleteOrder}
+                onDuplicateOrder={handleDuplicateOrder}
                 onNewOrder={() => handleOpenNewOrder()}
                 onQuickAdd={handleQuickAddOrder}
                 onExportInvoicePdf={(ords, clinic, month) =>

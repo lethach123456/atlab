@@ -27,7 +27,6 @@ interface QuickOrderValues {
 
 export type QuickOrderField = keyof QuickOrderValues;
 
-const SUGGESTED_BADGE_MS = 1800;
 
 function parseAmountInput(raw: string): number {
   const trimmed = raw.trim();
@@ -86,14 +85,12 @@ export function QuickOrderEntry({
   const { notify } = useNotify();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
   const saving = useRef(false);
   const amountManualRef = useRef(false);
   const createIdRef = useRef<string | null>(null);
   const codeInput = useRef<HTMLInputElement>(null);
   const lastSuggestionRef = useRef(0);
   const totalAmountRef = useRef(0);
-  const badgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expanded = hovered || pinned || formFocused || pickerOpen || busy;
 
   totalAmountRef.current = parseAmountInput(values.totalAmount);
@@ -132,18 +129,10 @@ export function QuickOrderEntry({
       values.totalAmount,
       materialPrices,
       clinicMaterialPrices,
-      showSuggestedBadge,
+      // amountManualRef is read inside; totalAmount/teethCount already trigger refresh
     ]
   );
 
-  const flashSuggestedBadge = () => {
-    if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
-    setShowSuggestedBadge(true);
-    badgeTimerRef.current = setTimeout(() => {
-      setShowSuggestedBadge(false);
-      badgeTimerRef.current = null;
-    }, SUGGESTED_BADGE_MS);
-  };
 
   useEffect(() => {
     if (suggestedTotal <= 0) return;
@@ -157,15 +146,10 @@ export function QuickOrderEntry({
       amountManualRef.current = false;
       setValues((v) => ({ ...v, totalAmount: String(suggestedTotal) }));
       lastSuggestionRef.current = suggestedTotal;
-      flashSuggestedBadge();
+      
     }
   }, [suggestedTotal]);
 
-  useEffect(() => {
-    return () => {
-      if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -263,11 +247,6 @@ export function QuickOrderEntry({
     setError('');
     setNotice('');
     if (field === 'totalAmount') {
-      if (badgeTimerRef.current) {
-        clearTimeout(badgeTimerRef.current);
-        badgeTimerRef.current = null;
-      }
-      setShowSuggestedBadge(false);
       amountManualRef.current = true;
     }
     setValues((current) => {
@@ -343,8 +322,6 @@ export function QuickOrderEntry({
         notes: '',
       }));
       lastSuggestionRef.current = nextSuggested;
-      if (nextSuggested > 0) flashSuggestedBadge();
-      else setShowSuggestedBadge(false);
       setPickerOpen(false);
       setNotice(`Đã lưu ${created.warrantyCode} — ${created.patientName}.`);
       notify({
@@ -443,17 +420,18 @@ export function QuickOrderEntry({
                     {columns.map(({ field, label }) => (
                       <td key={field} className="px-1 align-bottom">
                         <label className="relative flex min-w-0 flex-col gap-1">
-                          <span className={`whitespace-nowrap text-[10px] font-semibold text-slate-600 dark:text-slate-300${field === 'totalAmount' ? ' pr-12' : ''}`}>{label}</span>
-                          {field === 'totalAmount' && (
-                            <span
-                              aria-hidden={!showSuggestedBadge}
-                              className={`pointer-events-none absolute right-0 top-0 text-[9px] font-semibold uppercase tracking-wide text-teal-600/80 transition-opacity duration-300 ${
-                                showSuggestedBadge ? 'opacity-100' : 'opacity-0'
-                              }`}
-                            >
-                              đề xuất
-                            </span>
-                          )}
+                          <span className="flex h-4 min-w-0 items-center gap-1">
+                            <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+                            {field === 'totalAmount' ? (
+                              <span
+                                id="quick-order-amount-help"
+                                title={priceExplain.compactHint || undefined}
+                                className="min-w-0 flex-1 truncate text-right text-[9px] font-medium leading-none text-slate-500 dark:text-slate-400"
+                              >
+                                {priceExplain.compactHint || ' '}
+                              </span>
+                            ) : null}
+                          </span>
                           {field === 'clinicName' ? (
                             <select aria-label="Nhập nhanh Nha khoa" value={values.clinicName} onChange={(event) => update(field, event.target.value)} required disabled={busy} className={inputClass}>
                               <option value="">Chọn nha khoa</option>
@@ -481,14 +459,6 @@ export function QuickOrderEntry({
                                 placeholder={field === 'warrantyCode' ? 'Tự tạo' : field === 'orderDate' ? 'DD/MM/YYYY' : field === 'totalAmount' ? '0' : ''}
                                 aria-describedby={field === 'totalAmount' ? 'quick-order-amount-help' : undefined}
                                 disabled={busy} className={inputClass} />
-                              {field === 'totalAmount' && (
-                                <span id="quick-order-amount-help" className="block max-w-full truncate text-[9px] leading-tight text-slate-500 dark:text-slate-400" title={priceExplain.helpText + (priceExplain.relationLabel ? ` · ${priceExplain.relationLabel}` : '')}>
-                                  {priceExplain.helpText}
-                                  {priceExplain.relationLabel ? (
-                                    <span className="font-semibold text-amber-700 dark:text-amber-400"> · {priceExplain.relationLabel}</span>
-                                  ) : null}
-                                </span>
-                              )}
                             </>
                           )}
                         </label>

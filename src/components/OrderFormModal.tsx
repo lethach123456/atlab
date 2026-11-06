@@ -30,7 +30,6 @@ const FALLBACK_MATERIALS = [
   'Cùi giả',
 ];
 
-const SUGGESTED_BADGE_MS = 1800;
 
 const COMMON_WARRANTIES = [
   '1 năm',
@@ -82,11 +81,9 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const { notify } = useNotify();
   const [formError, setFormError] = useState('');
   const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
 
   const lastSuggestionRef = useRef(0);
   const totalAmountRef = useRef(0);
-  const badgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydrateGenRef = useRef(0);
   const skipAutofillGenRef = useRef(0);
   const pendingAmountRef = useRef(0);
@@ -162,32 +159,17 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       materialPrices,
       clinicMaterialPrices,
       loadedDiffersFromSuggestion,
-      // re-evaluate when autofill/manual toggles via amount changes
-      showSuggestedBadge,
     ]
   );
 
-  const flashSuggestedBadge = () => {
-    if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
-    setShowSuggestedBadge(true);
-    badgeTimerRef.current = setTimeout(() => {
-      setShowSuggestedBadge(false);
-      badgeTimerRef.current = null;
-    }, SUGGESTED_BADGE_MS);
-  };
 
   useEffect(() => {
     if (!isOpen) return;
     setFormError('');
     setSavePhase('idle');
     savingRef.current = false;
-    setShowSuggestedBadge(false);
     lastSuggestionRef.current = 0;
-    if (badgeTimerRef.current) {
-      clearTimeout(badgeTimerRef.current);
-      badgeTimerRef.current = null;
-    }
-    if (savedNoticeTimerRef.current) {
+if (savedNoticeTimerRef.current) {
       clearTimeout(savedNoticeTimerRef.current);
       savedNoticeTimerRef.current = null;
     }
@@ -320,7 +302,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       setLoadedDiffersFromSuggestion(false);
       setTotalAmountInput(suggestedTotal);
       lastSuggestionRef.current = suggestedTotal;
-      flashSuggestedBadge();
+      
       // Autofill is not user dirtiness — keep baseline in sync for amount only.
       try {
         const parsed = JSON.parse(baselineRef.current) as [string, string | number][];
@@ -337,7 +319,6 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   useEffect(() => {
     return () => {
-      if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
       if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
     };
   }, []);
@@ -644,29 +625,25 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   />
                 </div>
 
-                <div className="relative">
-                  <label htmlFor="order-amount" className="block text-[11px] font-bold text-teal-700 mb-1 pr-14">
-                    Thành tiền (VNĐ)
-                  </label>
-                  <span
-                    aria-hidden={!showSuggestedBadge}
-                    className={`pointer-events-none absolute right-0 top-0 text-[10px] font-semibold uppercase tracking-wide text-teal-600/80 transition-opacity duration-300 ${
-                      showSuggestedBadge ? 'opacity-100' : 'opacity-0'
-                    }`}
-                  >
-                    đề xuất
-                  </span>
+                <div>
+                  <div className="mb-1 flex h-4 min-w-0 items-center gap-2">
+                    <label htmlFor="order-amount" className="shrink-0 text-[11px] font-bold text-teal-700">
+                      Thành tiền (VNĐ)
+                    </label>
+                    <span
+                      id="order-amount-help"
+                      title={priceExplain.compactHint || undefined}
+                      className="min-w-0 flex-1 truncate text-right text-[10px] font-medium leading-none text-slate-500"
+                    >
+                      {priceExplain.compactHint || '\u00a0'}
+                    </span>
+                  </div>
                   <input id="order-amount"
                     type="number"
                     step={1}
                     min={0}
                     value={totalAmountInput}
                     onChange={(e) => {
-                      if (badgeTimerRef.current) {
-                        clearTimeout(badgeTimerRef.current);
-                        badgeTimerRef.current = null;
-                      }
-                      setShowSuggestedBadge(false);
                       amountManualRef.current = true;
                       setLoadedDiffersFromSuggestion(false);
                       setTotalAmountInput(Number(e.target.value));
@@ -675,12 +652,6 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                     className="w-full min-h-11 px-2.5 py-1.5 text-sm font-mono font-extrabold text-teal-800 bg-teal-50/50 border border-teal-400 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                     placeholder="Nhập số tiền..."
                   />
-                  <p id="order-amount-help" className="mt-1 text-[10px] leading-snug text-slate-500">
-                    <span>{priceExplain.helpText}</span>
-                    {priceExplain.relationLabel ? (
-                      <span className="ml-1 font-semibold text-amber-700">· {priceExplain.relationLabel}</span>
-                    ) : null}
-                  </p>
                 </div>
               </div>
             </div>
