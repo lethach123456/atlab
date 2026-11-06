@@ -1,0 +1,11 @@
+DirectoryIndex index.html index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Hỗ trợ đường dẫn /check-warranty/ nếu đặt ở thư mục gốc của domain
+  RewriteRule ^check-warranty/?$ index.html [L]
+  RewriteRule ^check-warranty/lookup\.php$ lookup.php [L,QSA]
+  RewriteRule ^check-warranty/assets/(.*)$ assets/$1 [L]
+  RewriteRule ^check-warranty/(style\.css|app\.js|teeth\.js)$ $1 [L]
+</IfModule>

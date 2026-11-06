@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
+import { defineJsonSecret } from 'firebase-functions/params';
+import { buildWarrantyResult } from './warrantyLookup.js';
 
 initializeApp();
 
@@ -118,5 +120,37 @@ export const updateSaleEmail = onCall({ region: 'us-central1', timeoutSeconds: 6
         logger.warn('Sale email update lock will expire automatically', { code: error?.code });
       }
     }
+  }
+});
+
+const warrantyApiConfig = defineJsonSecret('WARRANTY_API_CONFIG');
+// The key is held by the calling website's backend, never embedded in browser code.
+export const lookupWarranty = onRequest({ region: 'us-central1', cors: false, secrets: ['WARRANTY_API_CONFIG'], maxInstances: 3, timeoutSeconds: 15 }, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (req.method !== 'GET') return res.status(405).set('Allow', 'GET').json({ error: 'method_not_allowed' });
+  const suppliedKey = req.get('x-api-key') || '';
+  const config = warrantyApiConfig.value();
+  const expectedKey = config?.apiKey;
+  const digest = value => createHash('sha256').update(value).digest();
+  if (typeof expectedKey !== 'string' || !expectedKey || typeof config?.ownerId !== 'string' || !validUid.test(config.ownerId) || !suppliedKey || suppliedKey.length > 256 || !timingSafeEqual(digest(suppliedKey), digest(expectedKey))) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  const input = req.query.code;
+  if (typeof input !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.trim())) {
+    return res.status(400).json({ error: 'invalid_code' });
+  }
+  const code = input.trim().toUpperCase();
+  try {
+    const snapshot = await db.collection('orders').where('warrantyCode', '==', code).limit(101).get();
+    if (snapshot.empty) return res.status(404).json({ error: 'not_found' });
+    if (snapshot.size > 100) return res.status(409).json({ error: 'ambiguous_code' });
+    const records = snapshot.docs.map(doc => doc.data()).filter(row => row.ownerId === config.ownerId);
+    if (!records.length) return res.status(404).json({ error: 'not_found' });
+    const result = buildWarrantyResult(code, records);
+    if (!result) return res.status(409).json({ error: 'ambiguous_code' });
+    return res.status(200).json(result);
+  } catch (error) {
+    logger.error('Warranty lookup failed', { code: error?.code });
+    return res.status(503).json({ error: 'unavailable' });
   }
 });

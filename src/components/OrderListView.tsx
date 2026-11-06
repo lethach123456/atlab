@@ -1,5 +1,5 @@
 import { MonthFilter } from './MonthFilter';
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
 import { DentalOrder, MaterialPriceConfig, ClinicPartner } from '../types/dental';
 import { exportToCSV } from '../services/storage';
@@ -33,8 +33,8 @@ import {
   Edit3,
 } from 'lucide-react';
 
-type SortField = 'orderDate' | 'warrantyCode' | 'patientName' | 'clinicName' | 'teethCount' | 'totalAmount';
-type EditableField = SortField | 'teeth' | 'phone' | 'warrantyPeriod' | 'material' | 'notes';
+type SortField = 'id' | 'createdAt' | 'orderDate' | 'warrantyCode' | 'patientName' | 'clinicName' | 'teethCount' | 'totalAmount';
+type EditableField = Exclude<SortField, 'id' | 'createdAt'> | 'teeth' | 'phone' | 'warrantyPeriod' | 'material' | 'notes';
 
 const orderColumns: { field: QuickOrderField; label: string; sort?: SortField; width: string }[] = [
   { field: 'warrantyCode', label: 'Mã BH', sort: 'warrantyCode', width: 'min-w-24' },
@@ -60,6 +60,7 @@ const fieldMaxLengths: Partial<Record<EditableField, number>> = {
 
 interface OrderListViewProps {
   orders: DentalOrder[];
+  createdOrder?: Pick<DentalOrder, 'id' | 'monthYear'> | null;
   readOnly?: boolean;
   clinicNames: string[];
   clinicPartners: ClinicPartner[];
@@ -75,6 +76,7 @@ interface OrderListViewProps {
 
 export const OrderListView: React.FC<OrderListViewProps> = ({
   orders,
+  createdOrder,
   readOnly = false,
   clinicNames,
   clinicPartners,
@@ -94,7 +96,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   ), [orders, clinicPartners]);
   const [search, setSearch] = useState('');
 
-  const [sortField, setSortField] = useState<SortField | 'default'>('default');
+  const [sortField, setSortField] = useState<SortField | 'default'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
@@ -118,6 +120,15 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     availableMonths.find((m) => m === '11/2026') || availableMonths[0] || '11/2026';
   const prevMonthOfLatest = getPreviousMonthYear(latestMonth);
   const [selectedMonth, setSelectedMonth] = useState<string>(latestMonth);
+
+  useEffect(() => {
+    if (!createdOrder) return;
+    setSelectedMonth(createdOrder.monthYear);
+    setSearch('');
+    setSortField('createdAt');
+    setSortOrder('desc');
+    setPage(1);
+  }, [createdOrder?.id, createdOrder?.monthYear]);
 
   const catalogMaterialNames = useMemo(
     () => [...new Set(materialPrices.map(({ name }) => name.trim()).filter(Boolean))],
@@ -167,7 +178,11 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     }
     return [...filteredOrders].sort((a, b) => {
       let comp = 0;
-      if (sortField === 'orderDate') {
+      if (sortField === 'createdAt') {
+        comp = (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
+      } else if (sortField === 'id') {
+        comp = a.id.localeCompare(b.id, 'en', { numeric: true });
+      } else if (sortField === 'orderDate') {
         const toVal = (dStr: string) => {
           const parts = (dStr || '').split(/[\/-]/);
           if (parts.length >= 3) {
@@ -200,6 +215,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const currentOrders = sortedOrders.slice(startIndex, startIndex + pageSize);
 
   const toggleSort = (field: Exclude<typeof sortField, 'default'>) => {
+    setPage(1);
     if (sortField === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -210,7 +226,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
 
   const resetFilters = () => {
     setSearch('');
-    setSortField('default');
+    setSortField('createdAt');
+    setSortOrder('desc');
     setPage(1);
   };
 
@@ -283,8 +300,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       }
       case 'teethCount': {
         const count = Number(value);
-        if (!/^\d+$/.test(value) || count < 1 || count > 64) {
-          return reject('Số lượng phải là số nguyên từ 1 đến 64.');
+        if (!/^\d+$/.test(value) || count < 0 || count > 64) {
+          return reject('Số lượng phải là số nguyên từ 0 đến 64.');
         }
         changes = { teethCount: count };
         break;
@@ -603,7 +620,35 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
             </h3>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Sắp xếp đơn hàng theo"
+              value={sortField}
+              onChange={(event) => {
+                setSortField(event.target.value as SortField | 'default');
+                if (event.target.value === 'createdAt') setSortOrder('desc');
+                setPage(1);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+            >
+              <option value="createdAt">Theo lúc thêm đơn</option>
+              <option value="id">Theo ID</option>
+              <option value="warrantyCode">Theo mã BH</option>
+              <option value="patientName">Theo khách hàng</option>
+              <option value="clinicName">Theo nha khoa</option>
+              <option value="orderDate">Theo ngày</option>
+              <option value="teethCount">Theo số lượng</option>
+              <option value="totalAmount">Theo thành tiền</option>
+              <option value="default">Thứ tự hiện tại</option>
+            </select>
+            {sortField !== 'default' && (
+              <button type="button" onClick={() => { setSortOrder((value) => value === 'asc' ? 'desc' : 'asc'); setPage(1); }}
+                aria-label={`Đang sắp xếp ${sortOrder === 'asc' ? 'tăng' : 'giảm'} dần. Bấm để đổi chiều`}
+                className="flex items-center gap-1 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                <ArrowUpDown aria-hidden="true" className="size-3.5" />
+                {sortField === 'createdAt' ? (sortOrder === 'desc' ? 'Mới nhất trước' : 'Cũ nhất trước') : (sortOrder === 'asc' ? 'Tăng dần' : 'Giảm dần')}
+              </button>
+            )}
             <div className="relative w-64 sm:w-80">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -618,7 +663,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
               />
             </div>
 
-            {(search || sortField !== 'default') && (
+            {(search || sortField !== 'createdAt' || sortOrder !== 'desc') && (
               <button
                 onClick={resetFilters}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs text-blue-600 dark:text-sky-400 font-bold cursor-pointer"
@@ -693,7 +738,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                       <td key={field} className={`max-w-48 px-1 py-1 text-slate-700 dark:text-slate-200 ${fillRange?.field === field && currentOrders.findIndex((item) => item.id === order.id) >= Math.min(fillRange.start, fillRange.end) && currentOrders.findIndex((item) => item.id === order.id) <= Math.max(fillRange.start, fillRange.end) ? 'bg-teal-100/70 dark:bg-teal-900/30' : ''}`}>
                         <div className="group/fill relative">
                           {renderCellEditor(order, field, label)}
-                          {!readOnly && <button type="button" aria-label={`Kéo để sao chép ${label}`} title="Kéo để sao chép xuống" onPointerDown={(event) => startFill(event, order, field)} className="absolute bottom-0 right-0 z-10 size-3 cursor-crosshair touch-none rounded-sm border border-white bg-teal-600 opacity-0 shadow-sm group-hover/fill:opacity-100 focus-visible:opacity-100" />}
+                          {!readOnly && !(editingCell?.id === order.id && editingCell.field === field) && <button type="button" aria-label={`Kéo để sao chép ${label}`} title="Kéo để sao chép xuống" onPointerDown={(event) => startFill(event, order, field)} className="pointer-events-none absolute bottom-0 right-0 z-10 size-3 cursor-crosshair touch-none rounded-sm border border-white bg-teal-600 opacity-0 shadow-sm group-hover/fill:pointer-events-auto group-hover/fill:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100" />}
                         </div>
                         {field === 'patientName' && (order.phone || editingCell?.field === 'phone' && editingCell.id === order.id) &&
                           renderCellEditor(order, 'phone', 'Số điện thoại', true)}
@@ -821,7 +866,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
             const created = await onQuickAdd(data);
             setSelectedMonth(created.monthYear);
             setSearch('');
-            setSortField('default');
+            setSortField('createdAt');
+            setSortOrder('desc');
             setPage(1);
             return created;
           }} />

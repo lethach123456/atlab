@@ -1,0 +1,14 @@
+{
+  "name": "unc-certificate-interface",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "refresh": "php backend/refresh.php --once",
+    "refresh:watch": "php backend/refresh.php --loop",
+    "check": "node --check assets/app.js && node --check server.mjs && php -l data.php && php -l backend/warranty.php && php -l backend/cache.php && php -l backend/refresh.php && php -l router.php",
+    "test": "php tests/warranty.php && php tests/cache.php && node tests/server.mjs"
+  }
+}

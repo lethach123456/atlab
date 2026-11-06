@@ -1,5 +1,5 @@
 import { MonthFilter } from './MonthFilter';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DentalOrder } from '../types/dental';
 import {
   formatVND,
@@ -54,6 +54,9 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [editingTotalId, setEditingTotalId] = useState<string | null>(null);
   const [tempTotalAmount, setTempTotalAmount] = useState<string>('0');
+  const [editingQuantityId, setEditingQuantityId] = useState<string | null>(null);
+  const [quantityError, setQuantityError] = useState('');
+  const cancelQuantityBlur = useRef(false);
 
   useEffect(() => {
     if (initialMonth !== undefined && initialMonth !== '') {
@@ -196,6 +199,19 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
       totalAmount: numeric,
     });
     setEditingTotalId(null);
+  };
+
+  const saveQuantity = (order: DentalOrder, raw: string) => {
+    const value = raw.trim();
+    const count = Number(value);
+    if (!/^\d+$/.test(value) || count > 64) {
+      setQuantityError('Số lượng phải là số nguyên từ 0 đến 64.');
+      setEditingQuantityId(null);
+      return;
+    }
+    setQuantityError('');
+    setEditingQuantityId(null);
+    if (count !== order.teethCount) onUpdateOrder({ ...order, teethCount: count });
   };
 
   return (
@@ -478,6 +494,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
           </div>
         </div>
 
+        {quantityError && <p role="alert" className="px-4 pb-2 text-xs text-rose-600">{quantityError}</p>}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 dark:bg-slate-950/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[10px]">
@@ -526,7 +543,37 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                     {order.teeth || '—'}
                   </td>
                   <td className="py-2 px-2 text-center font-mono font-bold text-slate-900 dark:text-white">
-                    {order.teethCount ?? 0}
+                    {readOnly ? (order.teethCount ?? 0) : editingQuantityId === order.id ? (
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        aria-label={`Số lượng răng ${order.patientName}`}
+                        defaultValue={String(order.teethCount ?? 0)}
+                        autoFocus
+                        onFocus={(event) => event.currentTarget.select()}
+                        onBlur={(event) => {
+                          if (cancelQuantityBlur.current) { cancelQuantityBlur.current = false; return; }
+                          saveQuantity(order, event.currentTarget.value);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing) return;
+                          if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+                          if (event.key === 'Escape') {
+                            event.preventDefault();
+                            cancelQuantityBlur.current = true;
+                            event.currentTarget.blur();
+                            setEditingQuantityId(null);
+                            setQuantityError('');
+                          }
+                        }}
+                        className="w-16 rounded border border-teal-500 bg-white px-1 py-1 text-center text-slate-900 focus:outline-2 focus:outline-teal-500 dark:bg-slate-900 dark:text-white"
+                      />
+                    ) : (
+                      <button type="button" aria-label={`Sửa số lượng răng ${order.patientName}`} onClick={() => { setQuantityError(''); setEditingQuantityId(order.id); }}
+                        className="min-w-12 rounded px-2 py-1 hover:bg-teal-500/10 hover:text-teal-700 focus-visible:outline-2 focus-visible:outline-teal-500">
+                        {order.teethCount ?? 0}
+                      </button>
+                    )}
                   </td>
                   <td className="py-2 px-3 font-medium text-teal-700 dark:text-teal-300">
                     {order.material}

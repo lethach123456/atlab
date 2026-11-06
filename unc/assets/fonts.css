@@ -1,0 +1,35 @@
+@font-face {
+  font-family: SFProDisplay;
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./fonts/SFProDisplay-Thin.ttf') format('truetype');
+}
+@font-face {
+  font-family: SFProDisplay;
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/SFProDisplay-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: SFProDisplay;
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/SFProDisplay-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: SFProDisplay;
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/SFProDisplay-Bold.ttf') format('truetype');
+}
+@font-face {
+  font-family: SFProDisplay;
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/SFProDisplay-RegularItalic.ttf') format('truetype');
+}

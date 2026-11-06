@@ -194,6 +194,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const [ticketModalOrder, setTicketModalOrder] = useState<DentalOrder | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<DentalOrder | null>(null);
+  const [createdOrder, setCreatedOrder] = useState<Pick<DentalOrder, 'id' | 'monthYear'> | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Global keyboard shortcut Cmd/Ctrl + K
@@ -401,6 +402,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
         materialPrices
       );
       setOrders(updatedOrders);
+      setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
       setWarrantyModalOrder(newOrder);
       write(saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true));
 
@@ -413,6 +415,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
     const { newOrder } = createOrder(data, orders, materialPrices);
     await saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true);
     setOrders((current) => current.some(({ id }) => id === newOrder.id) ? current : [newOrder, ...current]);
+    setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
     return newOrder;
   };
 
@@ -798,6 +801,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
             {activeTab === 'orders' && (
               <OrderListView
                 orders={orders}
+                createdOrder={createdOrder}
                 readOnly={isReadOnly}
                 clinicNames={clinicNames}
                 clinicPartners={clinicPartners}

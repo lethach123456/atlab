@@ -1,0 +1,78 @@
+/* Accessibility and interaction support without changing the reference layout. */
+.toggle-mobile,
+.close-icon {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+.toggle-mobile img {
+  width: 24px;
+  height: 24px;
+}
+.header .container .navbar > ul .menu-item:focus-within > .sub-menu {
+  transform: scale(1);
+}
+.header .bg-mobile-popup:not(.active) {
+  visibility: hidden;
+}
+.header .bg-mobile-popup .mobile-popup > ul .menu-item .sub-menu {
+  display: none;
+}
+.header .bg-mobile-popup .mobile-popup > ul .menu-item.show .sub-menu {
+  display: block;
+}
+.form-checkbox {
+  position: relative;
+}
+.form-checkbox input[type='checkbox'] {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: calc(50% - 16px);
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  cursor: pointer;
+}
+.form-checkbox__label {
+  cursor: pointer;
+}
+.form-checkbox input:focus-visible ~ .form-checkbox__label::before {
+  outline: 2px solid #212529;
+  outline-offset: 3px;
+}
+:where(a, button, input):focus-visible {
+  outline: 2px solid #212529;
+  outline-offset: 4px;
+}
+.validation-message {
+  color: #d62027;
+  font-style: italic;
+}
+.validation-message[hidden] {
+  display: none;
+}
+.lookup-status {
+  margin-top: 16px;
+  color: #707070;
+  font-size: 15px;
+}
+.lookup-status[data-state='error'],
+.lookup-status[data-state='not-found'] {
+  color: #bc2027;
+}
+.input-frame__div-btn:disabled {
+  cursor: wait;
+}
+.header.is-scrolled {
+  background: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  html, body {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    transition: none !important;
+  }
+}

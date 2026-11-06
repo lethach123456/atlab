@@ -1,0 +1,13 @@
+DirectoryIndex index.html index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Cho phép truy cập trực tiếp đường dẫn /kiem-tra-chung-nhan-xuat-xu khi đặt ở thư mục gốc của domain
+  RewriteRule ^kiem-tra-chung-nhan-xuat-xu/?$ index.html [L]
+  RewriteRule ^kiem-tra-chung-nhan-xuat-xu/data\.php$ data.php [L,QSA]
+  RewriteRule ^kiem-tra-chung-nhan-xuat-xu/assets/(.*)$ assets/$1 [L]
+
+  # Chặn truy cập trực tiếp từ trình duyệt vào thư mục backend và tests
+  RewriteRule ^(backend|tests)(/|$) - [F,L]
+</IfModule>
