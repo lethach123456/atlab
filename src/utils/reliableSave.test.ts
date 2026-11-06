@@ -22,8 +22,33 @@ test('formatSaveError unwraps JSON firestore dumps without leaking nested auth',
     authInfo: { email: 'secret@example.com', userId: 'uid' },
   });
   const msg = formatSaveError(new Error(raw));
-  assert.match(msg, /quyền|đăng nhập/i);
+  assert.match(msg, /permission-denied|từ chối ghi|rules/i);
+  assert.doesNotMatch(msg, /Đăng nhập lại rồi thử/);
   assert.equal(msg.includes('secret@example.com'), false);
+});
+
+test('formatSaveError separates permission-denied from unauthenticated', () => {
+  const denied = Object.assign(new Error('Missing or insufficient permissions.'), {
+    code: 'permission-denied',
+  });
+  const deniedMsg = formatSaveError(denied);
+  assert.match(deniedMsg, /permission-denied|từ chối ghi|rules/i);
+  assert.doesNotMatch(deniedMsg, /Đăng nhập lại rồi thử/);
+
+  const unauth = Object.assign(new Error('User not authenticated'), {
+    code: 'unauthenticated',
+  });
+  const unauthMsg = formatSaveError(unauth);
+  assert.match(unauthMsg, /Đăng nhập lại|phiên đăng nhập đã hết/i);
+  assert.doesNotMatch(unauthMsg, /deploy lại rules/i);
+});
+
+test('formatSaveError rewrites old misleading combined permission copy', () => {
+  const msg = formatSaveError(
+    new Error('Không có quyền lưu hoặc phiên đăng nhập đã hết. Đăng nhập lại rồi thử.')
+  );
+  assert.match(msg, /permission-denied|từ chối ghi|rules/i);
+  assert.doesNotMatch(msg, /Không có quyền lưu hoặc phiên đăng nhập đã hết/);
 });
 
 test('formatSaveError maps network wording', () => {

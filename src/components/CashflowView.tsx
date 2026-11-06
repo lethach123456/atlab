@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CashflowTransaction } from '../types/dental';
 import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financeUtils';
 import { formatSaveError, formSnapshot, reuseOrCreateStableId } from '../utils/reliableSave';
+import { useNotify } from './AppNotifications';
 import { PAYROLL_EXPENSE_CATEGORY, DELIVERY_EXPENSE_CATEGORY, PROFIT_EXPENSE_CATEGORIES } from '../utils/profit';
 import {
   ArrowUpRight,
@@ -66,6 +67,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   ]), [availableMonths, transactions]);
   const latestMonth = cashflowMonths.find((m) => m === '11/2026') || cashflowMonths[0] || '11/2026';
 
+  const { notify } = useNotify();
   const [selectedMonth, setSelectedMonth] = useState<string>(latestMonth);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
@@ -332,7 +334,9 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       }, 450);
     } catch (cause) {
       setSavePhase('idle');
-      setFormError(formatSaveError(cause));
+      const message = formatSaveError(cause);
+      setFormError(message);
+      notify({ tone: 'error', title: 'Chưa lưu thu chi', message, persist: true });
     } finally {
       savingRef.current = false;
     }

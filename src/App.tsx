@@ -74,9 +74,14 @@ import { subscribePayrolls, savePayrollRecord, deletePayrollRecord } from './ser
 import { accountError, createAccount, subscribeUsers, updateAccount } from './services/userAccounts';
 import { commitWorkspaceChanges, saveWorkspaceRecord, deleteWorkspaceRecord, subscribeWorkspaceData, WorkspaceChange } from './services/workspaceData';
 import { formatSaveError, newStableId } from './utils/reliableSave';
+import { NotificationProvider, useNotify } from './components/AppNotifications';
 
 export default function App() {
-  return <AuthGate>{(profile) => <Workspace key={profile.uid} profile={profile} />}</AuthGate>;
+  return (
+    <NotificationProvider>
+      <AuthGate>{(profile) => <Workspace key={profile.uid} profile={profile} />}</AuthGate>
+    </NotificationProvider>
+  );
 }
 
 function changedFields<T extends object>(before: T, after: T) {
@@ -103,6 +108,7 @@ function loadNavigationSession(key: string, isAdmin: boolean): { activeTab: NavT
 }
 
 function Workspace({ profile }: { profile: UserProfile }) {
+  const { notify } = useNotify();
   const [orders, setOrders] = useState<DentalOrder[]>([]);
   const [materialPrices, setMaterialPrices] = useState<MaterialPriceConfig[]>([]);
   const [clinicMaterialPrices, setClinicMaterialPrices] = useState<ClinicMaterialPriceRow[]>([]);
@@ -342,7 +348,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
       setClinicPartners(data.partners);
       setLabProfile(data.profile);
       setLoading(false);
-    }, (error) => setSyncError(error.message));
+    }, (error) => setSyncError(formatSaveError(error, 'Không tải được dữ liệu workspace.')));
   }, [ownerId, profile.uid, profile.role, refresh]);
 
   useEffect(() => {
@@ -862,6 +868,19 @@ function Workspace({ profile }: { profile: UserProfile }) {
     setRefresh((value) => value + 1);
   };
 
+  useEffect(() => {
+    if (!syncError) return;
+    notify({
+      tone: 'error',
+      title: 'Không đồng bộ được',
+      message: syncError,
+      actionLabel: 'Tải lại dữ liệu',
+      onAction: handleResetData,
+      persist: true,
+      id: `sync:${syncError.slice(0, 160)}`,
+    });
+  }, [syncError, notify]);
+
   const handleOpenInvoicePdf = (
     targetOrders: DentalOrder[],
     clinicName: string,
@@ -960,9 +979,13 @@ function Workspace({ profile }: { profile: UserProfile }) {
       />
 
 
-      {(syncError || pendingWrites > 0 || loading) && <div className="px-4 pt-3 text-xs text-slate-500" role="status">
-        {syncError ? <p role="alert" className="text-rose-600">{syncError} <button type="button" onClick={handleResetData} className="underline">Tải lại dữ liệu</button></p> : pendingWrites > 0 ? 'Đang lưu thay đổi…' : loading ? 'Đang kết nối dữ liệu…' : null}
-      </div>}
+      {(pendingWrites > 0 || loading) && (
+        <div className="app-save-status pointer-events-none fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-[70] sm:left-4" role="status">
+          <p className="pointer-events-auto inline-flex items-center rounded-[10px] border border-slate-200/90 bg-white/95 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_24px_-12px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-300">
+            {pendingWrites > 0 ? 'Đang lưu thay đổi…' : 'Đang kết nối dữ liệu…'}
+          </p>
+        </div>
+      )}
 
       {/* Full-Width Workspace */}
       <main className="flex-1 w-full px-3 sm:px-5 lg:px-6 py-4">

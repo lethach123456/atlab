@@ -91,9 +91,14 @@ const emptyProfile: LabProfileConfig = {
 };
 
 function workspaceError(error: unknown): Error {
-  const code = (error as { code?: string })?.code;
-  if (code === 'permission-denied' || code === 'unauthenticated') {
-    return new Error('Tài khoản không có quyền truy cập dữ liệu này. Vui lòng kiểm tra trạng thái đăng nhập.');
+  const code = ((error as { code?: string })?.code || '').toLowerCase();
+  if (code === 'unauthenticated' || code.endsWith('/unauthenticated')) {
+    return new Error('Phiên đăng nhập đã hết hoặc chưa xác thực. Đăng nhập lại rồi thử.');
+  }
+  if (code === 'permission-denied' || code.endsWith('/permission-denied')) {
+    return new Error(
+      'Máy chủ từ chối ghi/đọc dữ liệu (permission-denied). Thường do quyền vai trò hoặc Firestore rules — không hẳn là hết phiên đăng nhập.'
+    );
   }
   if (code === 'unavailable' || code === 'deadline-exceeded') {
     return new Error('Chưa kết nối được Firestore. Vui lòng kiểm tra kết nối mạng và thử lại.');

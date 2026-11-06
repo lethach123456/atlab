@@ -7,7 +7,9 @@ import {
   getUnitPriceForMaterial,
   resolveMaterialPricesForClinic,
 } from '../utils/financeUtils';
+import { explainOrderAmountSuggestion } from '../utils/orderPriceTransparency';
 import { formatSaveError, formSnapshot, reuseOrCreateStableId } from '../utils/reliableSave';
+import { useNotify } from './AppNotifications';
 import { X, Save, Sparkles, Building2, User, Phone, Calendar, ShieldCheck, FileText } from 'lucide-react';
 
 interface OrderFormModalProps {
@@ -77,6 +79,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [toothForm, setToothForm] = useState('');
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<DentalOrder['status']>('');
+  const { notify } = useNotify();
   const [formError, setFormError] = useState('');
   const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
@@ -87,6 +90,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const hydrateGenRef = useRef(0);
   const skipAutofillGenRef = useRef(0);
   const pendingAmountRef = useRef(0);
+  const amountManualRef = useRef(false);
+  const [loadedDiffersFromSuggestion, setLoadedDiffersFromSuggestion] = useState(false);
   const savingRef = useRef(false);
   const createIdRef = useRef<string | null>(null);
   const baselineRef = useRef('');
@@ -136,6 +141,31 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     const count = Math.max(0, Number(teethCountInput) || 0);
     return count * suggestedUnitPrice;
   }, [suggestedUnitPrice, teethCountInput]);
+
+  const priceExplain = useMemo(
+    () =>
+      explainOrderAmountSuggestion({
+        clinicName,
+        material,
+        quantity: teethCountInput,
+        enteredAmount: totalAmountInput,
+        sharedPrices: materialPrices,
+        clinicRows: clinicMaterialPrices,
+        sessionManual: amountManualRef.current,
+        loadedDiffersFromSuggestion,
+      }),
+    [
+      clinicName,
+      material,
+      teethCountInput,
+      totalAmountInput,
+      materialPrices,
+      clinicMaterialPrices,
+      loadedDiffersFromSuggestion,
+      // re-evaluate when autofill/manual toggles via amount changes
+      showSuggestedBadge,
+    ]
+  );
 
   const flashSuggestedBadge = () => {
     if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
@@ -231,6 +261,18 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     setNotes(nextNotes);
     setStatus(nextStatus);
 
+    amountManualRef.current = false;
+    const hydrateCatalog = resolveMaterialPricesForClinic(
+      nextClinic,
+      materialPrices,
+      clinicMaterialPrices
+    );
+    const hydrateUnit = getUnitPriceForMaterial(nextMaterial, hydrateCatalog);
+    const hydrateSuggested = hydrateUnit > 0 ? nextTeethCount * hydrateUnit : 0;
+    setLoadedDiffersFromSuggestion(
+      Boolean(initialOrder?.id) && hydrateSuggested > 0 && nextAmount !== hydrateSuggested
+    );
+
     baselineRef.current = formSnapshot({
       warrantyCode: nextWarranty,
       patientName: nextPatient,
@@ -274,6 +316,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     }
 
     if (current === 0 || current === prev) {
+      amountManualRef.current = false;
+      setLoadedDiffersFromSuggestion(false);
       setTotalAmountInput(suggestedTotal);
       lastSuggestionRef.current = suggestedTotal;
       flashSuggestedBadge();
@@ -381,7 +425,9 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       }, 450);
     } catch (cause) {
       setSavePhase('idle');
-      setFormError(formatSaveError(cause));
+      const message = formatSaveError(cause);
+      setFormError(message);
+      notify({ tone: 'error', title: 'Chưa lưu đơn hàng', message, persist: true });
     } finally {
       savingRef.current = false;
     }
@@ -621,11 +667,20 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                         badgeTimerRef.current = null;
                       }
                       setShowSuggestedBadge(false);
+                      amountManualRef.current = true;
+                      setLoadedDiffersFromSuggestion(false);
                       setTotalAmountInput(Number(e.target.value));
                     }}
+                    aria-describedby="order-amount-help"
                     className="w-full min-h-11 px-2.5 py-1.5 text-sm font-mono font-extrabold text-teal-800 bg-teal-50/50 border border-teal-400 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                     placeholder="Nhập số tiền..."
                   />
+                  <p id="order-amount-help" className="mt-1 text-[10px] leading-snug text-slate-500">
+                    <span>{priceExplain.helpText}</span>
+                    {priceExplain.relationLabel ? (
+                      <span className="ml-1 font-semibold text-amber-700">· {priceExplain.relationLabel}</span>
+                    ) : null}
+                  </p>
                 </div>
               </div>
             </div>

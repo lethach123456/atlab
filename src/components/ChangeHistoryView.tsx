@@ -11,6 +11,7 @@ import {
   undoChangeHistoryEntry,
 } from '../services/changeHistoryUndo';
 import { ENTITY_LABELS, actionLabelVi, type ChangeAction } from '../utils/changeDiff';
+import { useNotify } from './AppNotifications';
 
 interface ChangeHistoryViewProps {
   ownerId: string;
@@ -51,6 +52,7 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const { notify } = useNotify();
   const [error, setError] = useState('');
   const [entityType, setEntityType] = useState('');
   const [search, setSearch] = useState('');
@@ -80,7 +82,9 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
         setCursor(page.cursor);
         setHasMore(page.hasMore);
       } catch {
-        setError('Không tải được lịch sử thay đổi. Kiểm tra quyền quản trị và kết nối mạng.');
+        const message = 'Không tải được lịch sử thay đổi. Kiểm tra quyền quản trị và kết nối mạng.';
+        setError(message);
+        notify({ tone: 'error', title: 'Lịch sử thay đổi', message, persist: true });
         if (mode === 'reset') {
           setEntries([]);
           setCursor(null);
@@ -371,14 +375,16 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
                         entry: confirmEntry,
                       });
                       setUndoMessage(result.message);
+                      notify({ tone: 'success', title: 'Đã hoàn tác', message: result.message });
                       setConfirmEntry(null);
                       await load('reset', null);
                     } catch (error) {
-                      setUndoError(
+                      const message =
                         error instanceof Error
                           ? error.message
-                          : 'Không hoàn tác được. Vui lòng thử lại.'
-                      );
+                          : 'Không hoàn tác được. Vui lòng thử lại.';
+                      setUndoError(message);
+                      notify({ tone: 'error', title: 'Hoàn tác thất bại', message, persist: true });
                     } finally {
                       setUndoBusy(false);
                     }

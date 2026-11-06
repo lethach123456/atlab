@@ -4,6 +4,7 @@ import { QuickOrderEntry, QuickOrderField } from './QuickOrderEntry';
 import { DentalOrder, MaterialPriceConfig, ClinicMaterialPriceRow, ClinicPartner } from '../types/dental';
 import { extractWarrantyYears } from '../utils/csvParser';
 import { formatSaveError } from '../utils/reliableSave';
+import { useNotify } from './AppNotifications';
 import { getClinicOptions } from '../utils/clinicPartners';
 import { resolveOrderInvoiceExportScope } from '../utils/orderInvoiceExport';
 import {
@@ -109,6 +110,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const [pageSize, setPageSize] = useState(100);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
+  const { notify } = useNotify();
   const [editError, setEditError] = useState('');
   const [cellSaving, setCellSaving] = useState(false);
   const cellSavingRef = useRef(false);
@@ -366,7 +368,9 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       await onUpdateOrder({ ...order, ...changes });
       finish();
     } catch (cause) {
-      setEditError(formatSaveError(cause));
+      const message = formatSaveError(cause);
+      setEditError(message);
+      notify({ tone: 'error', title: 'Chưa lưu ô đơn hàng', message, persist: true });
       setCellSaving(false);
       cellSavingRef.current = false;
       // Keep editor open so the draft value is preserved for retry.

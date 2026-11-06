@@ -8,7 +8,9 @@ import {
   getUnitPriceForMaterial,
   resolveMaterialPricesForClinic,
 } from '../utils/financeUtils';
+import { explainOrderAmountSuggestion } from '../utils/orderPriceTransparency';
 import { formatSaveError, reuseOrCreateStableId } from '../utils/reliableSave';
+import { useNotify } from './AppNotifications';
 
 interface QuickOrderValues {
   warrantyCode: string;
@@ -81,10 +83,12 @@ export function QuickOrderEntry({
     totalAmount: '', notes: '',
   }));
   const [busy, setBusy] = useState(false);
+  const { notify } = useNotify();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
   const saving = useRef(false);
+  const amountManualRef = useRef(false);
   const createIdRef = useRef<string | null>(null);
   const codeInput = useRef<HTMLInputElement>(null);
   const lastSuggestionRef = useRef(0);
@@ -110,6 +114,28 @@ export function QuickOrderEntry({
     return count * suggestedUnitPrice;
   }, [suggestedUnitPrice, values.teethCount]);
 
+  const priceExplain = useMemo(
+    () =>
+      explainOrderAmountSuggestion({
+        clinicName: values.clinicName,
+        material: values.material,
+        quantity: Number(values.teethCount) || 0,
+        enteredAmount: parseAmountInput(values.totalAmount),
+        sharedPrices: materialPrices,
+        clinicRows: clinicMaterialPrices,
+        sessionManual: amountManualRef.current,
+      }),
+    [
+      values.clinicName,
+      values.material,
+      values.teethCount,
+      values.totalAmount,
+      materialPrices,
+      clinicMaterialPrices,
+      showSuggestedBadge,
+    ]
+  );
+
   const flashSuggestedBadge = () => {
     if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
     setShowSuggestedBadge(true);
@@ -128,6 +154,7 @@ export function QuickOrderEntry({
       return;
     }
     if (current === 0 || current === prev) {
+      amountManualRef.current = false;
       setValues((v) => ({ ...v, totalAmount: String(suggestedTotal) }));
       lastSuggestionRef.current = suggestedTotal;
       flashSuggestedBadge();
@@ -241,6 +268,7 @@ export function QuickOrderEntry({
         badgeTimerRef.current = null;
       }
       setShowSuggestedBadge(false);
+      amountManualRef.current = true;
     }
     setValues((current) => {
       if (field === 'teeth') {
@@ -304,6 +332,7 @@ export function QuickOrderEntry({
       });
       createIdRef.current = null;
       const nextSuggested = suggestedUnitPrice > 0 ? suggestedUnitPrice : 0;
+      amountManualRef.current = false;
       setValues((current) => ({
         ...current,
         warrantyCode: '',
@@ -318,10 +347,17 @@ export function QuickOrderEntry({
       else setShowSuggestedBadge(false);
       setPickerOpen(false);
       setNotice(`Đã lưu ${created.warrantyCode} — ${created.patientName}.`);
+      notify({
+        tone: 'success',
+        title: 'Đã lưu đơn',
+        message: `${created.warrantyCode} — ${created.patientName}`,
+      });
       setFormFocused(true);
       requestAnimationFrame(() => codeInput.current?.focus());
     } catch (cause) {
-      setError(formatSaveError(cause, 'Chưa lưu được đơn. Kiểm tra mạng rồi bấm Thử lại.'));
+      const message = formatSaveError(cause, 'Chưa lưu được đơn. Kiểm tra mạng rồi bấm Thử lại.');
+      setError(message);
+      notify({ tone: 'error', title: 'Chưa lưu đơn', message, persist: true });
       setPinned(true);
     } finally {
       saving.current = false;
@@ -433,16 +469,27 @@ export function QuickOrderEntry({
                               {warranties.map((value) => <option key={value} value={value}>{value}</option>)}
                             </select>
                           ) : (
-                            <input aria-label={`Nhập nhanh ${label}`} value={values[field]}
-                              ref={field === 'warrantyCode' ? codeInput : field === 'teeth' ? teethInputRef : undefined}
-                              onFocus={field === 'teeth' ? () => setPickerOpen(true) : undefined}
-                              onClick={field === 'teeth' ? () => setPickerOpen(true) : undefined}
-                              onChange={(event) => update(field, event.target.value)}
-                              required={field === 'patientName' || field === 'orderDate' || field === 'teethCount'}
-                              maxLength={field === 'warrantyCode' ? 64 : field === 'notes' ? 1000 : field === 'patientName' || field === 'teeth' ? 200 : undefined}
-                              inputMode={field === 'totalAmount' || field === 'teethCount' ? 'numeric' : undefined}
-                              placeholder={field === 'warrantyCode' ? 'Tự tạo' : field === 'orderDate' ? 'DD/MM/YYYY' : field === 'totalAmount' ? '0' : ''}
-                              disabled={busy} className={inputClass} />
+                            <>
+                              <input aria-label={`Nhập nhanh ${label}`} value={values[field]}
+                                ref={field === 'warrantyCode' ? codeInput : field === 'teeth' ? teethInputRef : undefined}
+                                onFocus={field === 'teeth' ? () => setPickerOpen(true) : undefined}
+                                onClick={field === 'teeth' ? () => setPickerOpen(true) : undefined}
+                                onChange={(event) => update(field, event.target.value)}
+                                required={field === 'patientName' || field === 'orderDate' || field === 'teethCount'}
+                                maxLength={field === 'warrantyCode' ? 64 : field === 'notes' ? 1000 : field === 'patientName' || field === 'teeth' ? 200 : undefined}
+                                inputMode={field === 'totalAmount' || field === 'teethCount' ? 'numeric' : undefined}
+                                placeholder={field === 'warrantyCode' ? 'Tự tạo' : field === 'orderDate' ? 'DD/MM/YYYY' : field === 'totalAmount' ? '0' : ''}
+                                aria-describedby={field === 'totalAmount' ? 'quick-order-amount-help' : undefined}
+                                disabled={busy} className={inputClass} />
+                              {field === 'totalAmount' && (
+                                <span id="quick-order-amount-help" className="block max-w-full truncate text-[9px] leading-tight text-slate-500 dark:text-slate-400" title={priceExplain.helpText + (priceExplain.relationLabel ? ` · ${priceExplain.relationLabel}` : '')}>
+                                  {priceExplain.helpText}
+                                  {priceExplain.relationLabel ? (
+                                    <span className="font-semibold text-amber-700 dark:text-amber-400"> · {priceExplain.relationLabel}</span>
+                                  ) : null}
+                                </span>
+                              )}
+                            </>
                           )}
                         </label>
                       </td>
