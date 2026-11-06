@@ -7,6 +7,7 @@ import {
 } from '../utils/financeUtils';
 import { calculateDebtRows, DEBT_START_MONTH, debtMonthValue } from '../utils/debtLedger';
 import { getCurrentMonthYear } from '../utils/dashboardMetrics';
+import { DateTextInput } from './DateTextInput';
 import {
   CreditCard,
   Calendar,
@@ -757,11 +758,11 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
                   <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
                     Ngày Thu
                   </label>
-                  <input
-                    type="text"
+                  <DateTextInput
+                    allowClear
                     value={payDate}
-                    onChange={(e) => setPayDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                    onChange={setPayDate}
+                    inputClassName="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                   />
                 </div>
 

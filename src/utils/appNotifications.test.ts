@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildNotifyItem,
+  createConfirmQueue,
   dismissNotification,
   enqueueNotification,
   notificationDedupeKey,
   recordDedupeHit,
   sanitizeNotifyText,
   defaultDismissMs,
+  type ConfirmResolver,
 } from './appNotifications';
 
 test('sanitize strips secrets and truncates', () => {
@@ -60,4 +62,58 @@ test('dismiss removes by id', () => {
   const item = buildNotifyItem({ tone: 'warning', title: 'W', message: 'm', id: 'w1' });
   const queue = enqueueNotification([], item);
   assert.equal(dismissNotification(queue, 'w1').length, 0);
+});
+
+
+test('confirm queue serializes repeated confirms', async () => {
+  const q = createConfirmQueue();
+  const opened: number[] = [];
+  const p1 = q.enqueue((resolve) => {
+    opened.push(1);
+    resolve(true);
+  });
+  const p2 = q.enqueue((resolve) => {
+    opened.push(2);
+    resolve(false);
+  });
+  assert.deepEqual(await Promise.all([p1, p2]), [true, false]);
+  assert.deepEqual(opened, [1, 2]);
+});
+
+test('confirm queue cancelActive resolves pending as false', async () => {
+  const q = createConfirmQueue();
+  const holder: { resolve: ConfirmResolver | null } = { resolve: null };
+  let releaseGate: (() => void) | undefined;
+  const gate = new Promise<void>((r) => {
+    releaseGate = r;
+  });
+  const pending = q.enqueue((resolve) => {
+    holder.resolve = resolve;
+    releaseGate?.();
+  });
+  await gate;
+  assert.equal(q.hasActive(), true);
+  q.cancelActive();
+  assert.equal(await pending, false);
+  assert.equal(q.hasActive(), false);
+  // Stale resolver after cancel must be a no-op
+  holder.resolve?.(true);
+  assert.equal(q.hasActive(), false);
+});
+
+test('confirm settle is once-only for active resolver', async () => {
+  const q = createConfirmQueue();
+  const holder: { resolve: ConfirmResolver | null } = { resolve: null };
+  let releaseGate: (() => void) | undefined;
+  const gate = new Promise<void>((r) => {
+    releaseGate = r;
+  });
+  const pending = q.enqueue((resolve) => {
+    holder.resolve = resolve;
+    releaseGate?.();
+  });
+  await gate;
+  holder.resolve?.(true);
+  holder.resolve?.(false); // ignored
+  assert.equal(await pending, true);
 });

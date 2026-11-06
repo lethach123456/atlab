@@ -2,6 +2,8 @@ import { MonthFilter } from './MonthFilter';
 import React, { useState, useMemo, useRef } from 'react';
 import { DeliveryRecord, DentalOrder } from '../types/dental';
 import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financeUtils';
+import { DateCellEditor, DateTextInput } from './DateTextInput';
+import { normalizeDdMmYyyy } from '../utils/dateOnly';
 import {
   Truck,
   Plus,
@@ -223,14 +225,13 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
       changes = { shippingFee: amount };
     }
     if (field === 'deliveryDate' && value) {
-      const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
-      const iso = match && `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
-      const date = iso ? new Date(iso) : new Date(NaN);
-      if (!iso || !Number.isFinite(+date) || date.toISOString().slice(0, 10) !== iso) {
+      const normalized = normalizeDdMmYyyy(value);
+      if (!normalized) {
         setCellError('Nhập ngày hợp lệ theo định dạng DD/MM/YYYY.');
         return;
       }
-      changes = { deliveryDate: iso.split('-').reverse().join('/'), monthYear: iso.slice(5, 7) + '/' + iso.slice(0, 4) };
+      const parts = normalized.split('/');
+      changes = { deliveryDate: normalized, monthYear: `${parts[1]}/${parts[2]}` };
     }
     if (field === 'clinicName') {
       const partner = partnerClinics.find(({ name }) => name === value);
@@ -318,6 +319,21 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
             onKeyDown={onKeyDown} onBlur={(event) => { void saveCell(record, field, event.currentTarget.value); }}>
             {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
+        ) : field === 'deliveryDate' ? (
+          <DateCellEditor
+            initialValue={draft}
+            label={label}
+            disabled={savingCell}
+            invalid={Boolean(cellError)}
+            describedBy={cellError ? 'delivery-cell-error' : undefined}
+            onDraftChange={() => setCellError('')}
+            onCancel={() => {
+              cancelled.current = true;
+              setEditingCell(null);
+              setCellError('');
+            }}
+            onCommit={(value) => { void saveCell(record, field, value); }}
+          />
         ) : (
           <input autoFocus aria-label={label} disabled={savingCell} value={draft}
             maxLength={deliveryMaxLengths[field]}
@@ -741,11 +757,10 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
                   <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
                     Ngày
                   </label>
-                  <input
-                    type="text"
+                  <DateTextInput
                     value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                    className="w-full px-2.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                    onChange={setFormDate}
+                    inputClassName="w-full px-2.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>

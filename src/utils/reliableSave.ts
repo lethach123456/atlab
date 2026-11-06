@@ -23,17 +23,17 @@ function firebaseErrorCode(error: unknown): string {
 /** Strip nested Firebase/auth dumps so UI never shows secrets. */
 export function formatSaveError(error: unknown, fallback = 'Không lưu được. Vui lòng thử lại.'): string {
   if (isBrowserOffline()) {
-    return 'Đang offline — chưa lưu lên máy chủ. Kiểm tra mạng rồi bấm Thử lại.';
+    return 'Đang offline — chưa lưu. Kiểm tra mạng rồi bấm Thử lại.';
   }
 
   const code = firebaseErrorCode(error);
 
   // Prefer Firebase error codes over message substring matching.
   if (code === 'unauthenticated' || code.endsWith('/unauthenticated')) {
-    return 'Phiên đăng nhập đã hết hoặc chưa xác thực. Đăng nhập lại rồi thử.';
+    return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
   }
   if (code === 'permission-denied' || code.endsWith('/permission-denied')) {
-    return 'Máy chủ từ chối ghi dữ liệu (permission-denied). Đây thường do quyền vai trò hoặc Firestore rules — không hẳn là hết phiên đăng nhập. Nếu vừa cập nhật app/audit, cần admin deploy lại rules.';
+    return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
   }
 
   let message = '';
@@ -48,10 +48,10 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
       if (typeof parsed.code === 'string' && parsed.code.trim()) {
         const nested = parsed.code.toLowerCase();
         if (nested.includes('unauthenticated')) {
-          return 'Phiên đăng nhập đã hết hoặc chưa xác thực. Đăng nhập lại rồi thử.';
+          return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
         }
         if (nested.includes('permission')) {
-          return 'Máy chủ từ chối ghi dữ liệu (permission-denied). Đây thường do quyền vai trò hoặc Firestore rules — không hẳn là hết phiên đăng nhập. Nếu vừa cập nhật app/audit, cần admin deploy lại rules.';
+          return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
         }
       }
       if (typeof parsed.error === 'string' && parsed.error.trim()) message = parsed.error;
@@ -60,14 +60,26 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
     // plain string
   }
 
-  // Keep already-localized save messages (idempotent formatting).
-  if (/thử lại|đăng nhập lại|permission-denied|từ chối ghi/i.test(message) &&
+  // Soften/normalize already-localized or legacy technical save messages.
+  if (/thử lại|đăng nhập lại|permission-denied|từ chối ghi|firestore rules|deploy lại rules/i.test(message) &&
       /(offline|máy chủ|chưa lưu|kết nối|permission|quyền|phiên|rules)/i.test(message)) {
-    // Still rewrite the old misleading combined message.
+    // Old combined misleading copy → treat as permission (not session expiry).
     if (/không có quyền lưu hoặc phiên đăng nhập đã hết/i.test(message)) {
-      return 'Máy chủ từ chối ghi dữ liệu (permission-denied). Đây thường do quyền vai trò hoặc Firestore rules — không hẳn là hết phiên đăng nhập. Nếu vừa cập nhật app/audit, cần admin deploy lại rules.';
+      return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
     }
-    return message.trim();
+    if (/permission-denied|firestore rules|deploy lại rules|từ chối ghi/i.test(message)) {
+      return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
+    }
+    if (/phiên đăng nhập đã hết|chưa xác thực|đăng nhập lại/i.test(message)) {
+      return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
+    }
+    if (/offline/i.test(message)) return 'Đang offline — chưa lưu. Kiểm tra mạng rồi bấm Thử lại.';
+    return message
+      .replace(/\s*\(permission-denied\)/gi, '')
+      .replace(/\s*Đây thường do quyền vai trò hoặc Firestore rules[^.]*\./gi, '')
+      .replace(/\s*Nếu vừa cập nhật app\/audit,[^.]*\./gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   const lower = message.toLowerCase();
@@ -80,10 +92,10 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
     return 'Mất kết nối máy chủ — chưa lưu. Kiểm tra mạng rồi bấm Thử lại.';
   }
   if (lower.includes('unauthenticated') || lower.includes('auth/requires-recent-login')) {
-    return 'Phiên đăng nhập đã hết hoặc chưa xác thực. Đăng nhập lại rồi thử.';
+    return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
   }
   if (lower.includes('permission-denied') || lower.includes('insufficient permissions') || lower.includes('permission')) {
-    return 'Máy chủ từ chối ghi dữ liệu (permission-denied). Đây thường do quyền vai trò hoặc Firestore rules — không hẳn là hết phiên đăng nhập. Nếu vừa cập nhật app/audit, cần admin deploy lại rules.';
+    return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
   }
   // Never surface tokens/emails from nested dumps.
   message = message
@@ -96,7 +108,7 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
 
 export function assertOnlineForSave(): void {
   if (isBrowserOffline()) {
-    throw new Error('Đang offline — chưa lưu lên máy chủ. Kiểm tra mạng rồi bấm Thử lại.');
+    throw new Error('Đang offline — chưa lưu. Kiểm tra mạng rồi bấm Thử lại.');
   }
 }
 

@@ -5,6 +5,7 @@ import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financ
 import { formatSaveError, formSnapshot, reuseOrCreateStableId } from '../utils/reliableSave';
 import { useNotify } from './AppNotifications';
 import { PAYROLL_EXPENSE_CATEGORY, DELIVERY_EXPENSE_CATEGORY, PROFIT_EXPENSE_CATEGORIES } from '../utils/profit';
+import { DateTextInput } from './DateTextInput';
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -67,7 +68,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   ]), [availableMonths, transactions]);
   const latestMonth = cashflowMonths.find((m) => m === '11/2026') || cashflowMonths[0] || '11/2026';
 
-  const { notify } = useNotify();
+  const { notify, confirm } = useNotify();
   const [selectedMonth, setSelectedMonth] = useState<string>(latestMonth);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
@@ -263,10 +264,16 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     return txSpender.trim();
   };
 
-  const requestCloseModal = () => {
+  const requestCloseModal = async () => {
     if (savingRef.current) return;
     if (isDirty()) {
-      const ok = window.confirm('Có thay đổi chưa lưu. Bạn có chắc muốn đóng và hủy?');
+      const ok = await confirm({
+        title: 'Hủy thay đổi?',
+        message: 'Có thay đổi chưa lưu. Đóng sẽ mất các chỉnh sửa này.',
+        confirmLabel: 'Đóng và hủy',
+        cancelLabel: 'Tiếp tục sửa',
+        danger: true,
+      });
       if (!ok) return;
     }
     setModalOpen(false);
@@ -822,12 +829,11 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                   <label className="block font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
                     Ngày Ghi Sổ *
                   </label>
-                  <input
-                    type="text"
+                  <DateTextInput
                     required
                     value={txDate}
-                    onChange={(e) => setTxDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                    onChange={setTxDate}
+                    inputClassName="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>

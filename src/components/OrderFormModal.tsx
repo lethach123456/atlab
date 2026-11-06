@@ -10,7 +10,8 @@ import {
 import { explainOrderAmountSuggestion } from '../utils/orderPriceTransparency';
 import { formatSaveError, formSnapshot, reuseOrCreateStableId } from '../utils/reliableSave';
 import { useNotify } from './AppNotifications';
-import { X, Save, Sparkles, Building2, User, Phone, Calendar, ShieldCheck, FileText } from 'lucide-react';
+import { X, Save, Sparkles, Building2, User, Phone, ShieldCheck, FileText } from 'lucide-react';
+import { DateTextInput } from './DateTextInput';
 
 interface OrderFormModalProps {
   isOpen: boolean;
@@ -78,7 +79,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [toothForm, setToothForm] = useState('');
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<DentalOrder['status']>('');
-  const { notify } = useNotify();
+  const { notify, confirm } = useNotify();
   const [formError, setFormError] = useState('');
   const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'saved'>('idle');
 
@@ -337,10 +338,16 @@ if (savedNoticeTimerRef.current) {
 
   if (!isOpen) return null;
 
-  const requestClose = () => {
+  const requestClose = async () => {
     if (savingRef.current) return;
     if (isDirty()) {
-      const ok = window.confirm('Có thay đổi chưa lưu. Bạn có chắc muốn đóng và hủy?');
+      const ok = await confirm({
+        title: 'Hủy thay đổi?',
+        message: 'Có thay đổi chưa lưu. Đóng sẽ mất các chỉnh sửa này.',
+        confirmLabel: 'Đóng và hủy',
+        cancelLabel: 'Tiếp tục sửa',
+        danger: true,
+      });
       if (!ok) return;
     }
     onClose();
@@ -567,16 +574,13 @@ if (savedNoticeTimerRef.current) {
                 <label htmlFor="order-date" className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1">
                   Ngày giao / lắp
                 </label>
-                <div className="relative">
-                  <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input id="order-date"
-                    type="text"
-                    value={orderDate}
-                    onChange={(e) => setOrderDate(e.target.value)}
-                    className="w-full min-h-11 pl-9 pr-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
-                    placeholder="VD: 15/04/2025"
-                  />
-                </div>
+                <DateTextInput
+                  id="order-date"
+                  value={orderDate}
+                  onChange={setOrderDate}
+                  placeholder="VD: 15/04/2025"
+                  inputClassName="w-full min-h-11 text-sm bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500 dark:bg-slate-950 dark:border-slate-700 dark:text-white"
+                />
               </div>
             </div>
 

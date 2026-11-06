@@ -100,3 +100,50 @@ export function enqueueNotification(
 export function dismissNotification(queue: NotifyItem[], id: string): NotifyItem[] {
   return queue.filter((entry) => entry.id !== id);
 }
+
+
+/** Serial confirm queue: one dialog at a time; settle/cancel safely. */
+export type ConfirmResolver = (value: boolean) => void;
+
+export function createConfirmQueue() {
+  let chain: Promise<unknown> = Promise.resolve();
+  let active: ConfirmResolver | null = null;
+
+  function settle(value: boolean) {
+    const resolve = active;
+    active = null;
+    resolve?.(value);
+  }
+
+  return {
+    /** Enqueue a confirm; `open` receives a once-only resolver. */
+    enqueue(open: (resolve: ConfirmResolver) => void): Promise<boolean> {
+      const run = () =>
+        new Promise<boolean>((resolve) => {
+          let done = false;
+          const once: ConfirmResolver = (value) => {
+            if (done) return;
+            done = true;
+            if (active === once) active = null;
+            resolve(value);
+          };
+          active = once;
+          open(once);
+        });
+      const next = chain.then(run, run);
+      chain = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    },
+    settle,
+    /** Resolve current confirm as false (unmount / abort). */
+    cancelActive() {
+      settle(false);
+    },
+    hasActive() {
+      return active != null;
+    },
+  };
+}

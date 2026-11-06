@@ -11,6 +11,8 @@ import {
 import { explainOrderAmountSuggestion } from '../utils/orderPriceTransparency';
 import { formatSaveError, reuseOrCreateStableId } from '../utils/reliableSave';
 import { useNotify } from './AppNotifications';
+import { DateTextInput } from './DateTextInput';
+import { normalizeDdMmYyyy, todayDdMmYyyy } from '../utils/dateOnly';
 
 interface QuickOrderValues {
   warrantyCode: string;
@@ -53,11 +55,8 @@ interface ColumnLayout {
   widths: number[];
 }
 
-function todayDate() {
-  const today = new Date();
-  return [today.getDate(), today.getMonth() + 1, today.getFullYear()]
-    .map((part) => String(part).padStart(2, '0')).join('/');
-}
+const todayDate = () => todayDdMmYyyy();
+
 
 const warranties = ['1 năm', '2 năm', '3 năm', '5 năm', '7 năm', '10 năm', '15 năm', '20 năm', '26 năm', '50 năm', 'Trọn đời'];
 
@@ -82,7 +81,7 @@ export function QuickOrderEntry({
     totalAmount: '', notes: '',
   }));
   const [busy, setBusy] = useState(false);
-  const { notify } = useNotify();
+  const { notify, confirm } = useNotify();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const saving = useRef(false);
@@ -173,10 +172,16 @@ export function QuickOrderEntry({
     );
   }
 
-  function collapse() {
+  async function collapse() {
     if (busy) return;
     if (hasUnsavedDraft()) {
-      const ok = window.confirm('Có nội dung chưa lưu. Bạn có chắc muốn thu gọn và hủy?');
+      const ok = await confirm({
+        title: 'Thu gọn nhập nhanh?',
+        message: 'Có nội dung chưa lưu. Thu gọn sẽ mất nội dung đang nhập.',
+        confirmLabel: 'Thu gọn',
+        cancelLabel: 'Tiếp tục',
+        danger: true,
+      });
       if (!ok) {
         setPinned(true);
         return;
@@ -262,14 +267,12 @@ export function QuickOrderEntry({
     event.preventDefault();
     if (saving.current) return;
     const clinic = clinics.find(({ name }) => name === values.clinicName);
-    const dateMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(values.orderDate.trim());
-    const iso = dateMatch && `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
-    const date = iso ? new Date(iso) : new Date(NaN);
+    const normalizedDate = normalizeDdMmYyyy(values.orderDate);
     if (!values.patientName.trim() || !clinic || !values.material) {
       setError('Nhập khách hàng, chọn nha khoa và dòng sứ.');
       return;
     }
-    if (!iso || !Number.isFinite(+date) || date.toISOString().slice(0, 10) !== iso) {
+    if (!normalizedDate) {
       setError('Nhập ngày hợp lệ theo định dạng DD/MM/YYYY.');
       return;
     }
@@ -296,8 +299,8 @@ export function QuickOrderEntry({
         patientName: values.patientName.trim(),
         clinicName: clinic.name,
         clinicAddress: clinic.address,
-        orderDate: iso.split('-').reverse().join('/'),
-        monthYear: iso.slice(5, 7) + '/' + iso.slice(0, 4),
+        orderDate: normalizedDate,
+        monthYear: normalizedDate.slice(3, 5) + '/' + normalizedDate.slice(6, 10),
         teeth: values.teeth.trim(),
         teethCount: count,
         material: values.material,
@@ -448,17 +451,29 @@ export function QuickOrderEntry({
                             </select>
                           ) : (
                             <>
+                              {field === 'orderDate' ? (
+                                <DateTextInput
+                                  aria-label={`Nhập nhanh ${label}`}
+                                  value={values.orderDate}
+                                  onChange={(next) => update('orderDate', next)}
+                                  required
+                                  disabled={busy}
+                                  placeholder="DD/MM/YYYY"
+                                  inputClassName={inputClass}
+                                />
+                              ) : (
                               <input aria-label={`Nhập nhanh ${label}`} value={values[field]}
                                 ref={field === 'warrantyCode' ? codeInput : field === 'teeth' ? teethInputRef : undefined}
                                 onFocus={field === 'teeth' ? () => setPickerOpen(true) : undefined}
                                 onClick={field === 'teeth' ? () => setPickerOpen(true) : undefined}
                                 onChange={(event) => update(field, event.target.value)}
-                                required={field === 'patientName' || field === 'orderDate' || field === 'teethCount'}
+                                required={field === 'patientName' || field === 'teethCount'}
                                 maxLength={field === 'warrantyCode' ? 64 : field === 'notes' ? 1000 : field === 'patientName' || field === 'teeth' ? 200 : undefined}
                                 inputMode={field === 'totalAmount' || field === 'teethCount' ? 'numeric' : undefined}
-                                placeholder={field === 'warrantyCode' ? 'Tự tạo' : field === 'orderDate' ? 'DD/MM/YYYY' : field === 'totalAmount' ? '0' : ''}
+                                placeholder={field === 'warrantyCode' ? 'Tự tạo' : field === 'totalAmount' ? '0' : ''}
                                 aria-describedby={field === 'totalAmount' ? 'quick-order-amount-help' : undefined}
                                 disabled={busy} className={inputClass} />
+                              )}
                             </>
                           )}
                         </label>

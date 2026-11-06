@@ -12,6 +12,8 @@ import {
   sortMonthYearsDesc,
   getPreviousMonthYear,
 } from '../utils/financeUtils';
+import { DateCellEditor } from './DateTextInput';
+import { formatMonthYear, normalizeDdMmYyyy, parseDdMmYyyy } from '../utils/dateOnly';
 import {
   Search,
   FileDown,
@@ -114,7 +116,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const [pageSize, setPageSize] = useState(100);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
-  const { notify } = useNotify();
+  const { notify, confirm } = useNotify();
   const [editError, setEditError] = useState('');
   const [cellSaving, setCellSaving] = useState(false);
   const cellSavingRef = useRef(false);
@@ -317,17 +319,10 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     let changes: Partial<DentalOrder>;
     switch (field) {
       case 'orderDate': {
-        const parts = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
-        if (!parts) return reject('Nhập ngày theo định dạng DD/MM/YYYY.');
-        const day = parts[1].padStart(2, '0');
-        const month = parts[2].padStart(2, '0');
-        const year = parts[3];
-        const isoDate = `${year}-${month}-${day}`;
-        const date = new Date(isoDate);
-        if (!Number(year) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== isoDate) {
-          return reject('Ngày không hợp lệ.');
-        }
-        changes = { orderDate: `${day}/${month}/${year}`, monthYear: `${month}/${year}` };
+        const normalized = normalizeDdMmYyyy(value);
+        if (!normalized) return reject('Nhập ngày theo định dạng DD/MM/YYYY.');
+        const parsed = parseDdMmYyyy(normalized)!;
+        changes = { orderDate: normalized, monthYear: formatMonthYear(parsed) };
         break;
       }
       case 'teethCount': {
@@ -458,6 +453,24 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     const isEditing = editingCell?.id === order.id && editingCell.field === field;
 
     if (isEditing) {
+      if (field === 'orderDate') {
+        return (
+          <DateCellEditor
+            initialValue={raw}
+            label={label}
+            disabled={cellSaving}
+            invalid={Boolean(editError)}
+            describedBy={editError ? 'order-cell-error' : undefined}
+            onDraftChange={() => setEditError('')}
+            onCancel={() => {
+              if (cellSavingRef.current) return;
+              setEditingCell(null);
+              setEditError('');
+            }}
+            onCommit={(value, leaving) => { void saveCell(order, field, value, leaving); }}
+          />
+        );
+      }
       return (
         <input
           autoFocus
@@ -1037,11 +1050,17 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
             type="button"
             role="menuitem"
             onClick={() => {
-              closeRowMenu();
-              const ok = window.confirm(
-                `Xóa đơn ${menuOrder.warrantyCode || ''} — ${menuOrder.patientName || ''}?`
-              );
-              if (ok) onDeleteOrder(menuOrder.id);
+              void (async () => {
+                closeRowMenu();
+                const ok = await confirm({
+                  title: 'Xóa đơn hàng?',
+                  message: `Xóa đơn ${menuOrder.warrantyCode || ''} — ${menuOrder.patientName || ''}? Thao tác không hoàn tác từ đây.`,
+                  confirmLabel: 'Xóa',
+                  cancelLabel: 'Hủy',
+                  danger: true,
+                });
+                if (ok) onDeleteOrder(menuOrder.id);
+              })();
             }}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
           >
