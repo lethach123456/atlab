@@ -11,6 +11,8 @@ import {
 import {
   DEFAULT_MATERIAL_PRICES,
   DEFAULT_LAB_PROFILE,
+  MATERIAL_PRICES_SEED_VERSION,
+  seedMaterialPricesFromDefaults,
   extractMonthYear,
 } from '../utils/financeUtils';
 
@@ -154,12 +156,21 @@ export function deleteOrder(id: string, existingOrders: DentalOrder[]): DentalOr
 /**
  * Material Price Configs
  */
+const PRICES_SEED_KEY = 'at_dental_lab_prices_seed_version';
+
 export function getMaterialPrices(): MaterialPriceConfig[] {
   try {
     const cached = localStorage.getItem(PRICES_KEY);
     if (cached) {
       const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (localStorage.getItem(PRICES_SEED_KEY) === MATERIAL_PRICES_SEED_VERSION) {
+          return parsed;
+        }
+        const { next } = seedMaterialPricesFromDefaults(parsed);
+        saveMaterialPrices(next);
+        return next;
+      }
     }
   } catch (e) {
     console.warn(e);
@@ -171,6 +182,7 @@ export function getMaterialPrices(): MaterialPriceConfig[] {
 export function saveMaterialPrices(prices: MaterialPriceConfig[]): void {
   try {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
+    localStorage.setItem(PRICES_SEED_KEY, MATERIAL_PRICES_SEED_VERSION);
   } catch (e) {
     console.error(e);
   }

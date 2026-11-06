@@ -2,5 +2,9 @@
   "functions": {
     "source": "functions",
     "runtime": "nodejs22"
+  },
+  "firestore": {
+    "database": "ai-studio-atdentallabqunll-228a6161-2408-4bb9-ba0f-db8a7fd91902",
+    "rules": "firestore.rules"
   }
 }

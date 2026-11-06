@@ -153,3 +153,10 @@ export interface FilterState {
   year: string;
   status: string;
 }
+
+/** Một dòng giá vật liệu gắn với nha khoa (bảng giá riêng). */
+export interface ClinicMaterialPriceRow extends MaterialPriceConfig {
+  clinicId: string;
+  clinicKey: string;
+  clinicName: string;
+}

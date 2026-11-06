@@ -168,7 +168,7 @@ function workspace(): WorkspaceData {
         date: '', paymentMethod: 'cash', createdAt: 1 }],
     deliveries: [{ id: 'delivery', clinicName: 'Tên Cũ', monthYear: '10/2026', clinicAddress: '', deliveryDate: '01/10/2026',
       warrantyCode: '', patientName: '', direction: '', courierName: '', shippingFee: 30_000, payer: 'lab', status: '', createdAt: 1 }],
-    partners: [profile({ name: 'Tên Mới', previousNames: ['Tên Cũ'] })], prices: [], profile: { ...DEFAULT_LAB_PROFILE },
+    partners: [profile({ name: 'Tên Mới', previousNames: ['Tên Cũ'] })], prices: [], clinicPrices: [], profile: { ...DEFAULT_LAB_PROFILE },
   };
 }
 

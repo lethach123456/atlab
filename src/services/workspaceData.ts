@@ -14,6 +14,7 @@ import { createClinicNameResolver } from '../utils/clinicPartners';
 import type {
   CashflowTransaction,
   ClinicDebtRecord,
+  ClinicMaterialPriceRow,
   ClinicPartner,
   DebtPaymentRecord,
   DeliveryRecord,
@@ -28,6 +29,7 @@ export interface WorkspaceData {
   cashflows: CashflowTransaction[];
   deliveries: DeliveryRecord[];
   prices: MaterialPriceConfig[];
+  clinicPrices: ClinicMaterialPriceRow[];
   debts: ClinicDebtRecord[];
   partners: ClinicPartner[];
   profile: LabProfileConfig;
@@ -57,6 +59,7 @@ const workspaceCollections = {
   cashflows: 'cashflows',
   deliveries: 'deliveries',
   prices: 'materialPrices',
+  clinicPrices: 'clinicMaterialPrices',
   debts: 'clinicDebts',
   partners: 'clinicPartners',
   profile: 'settings',
@@ -114,6 +117,7 @@ export function subscribeWorkspaceData(
     cashflows: [],
     deliveries: [],
     prices: [],
+    clinicPrices: [],
     debts: [],
     partners: [],
     profile: { ...emptyProfile },

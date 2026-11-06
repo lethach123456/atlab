@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   DentalOrder,
   MaterialPriceConfig,
+  ClinicMaterialPriceRow,
   DebtPaymentRecord,
   ClinicDebtRecord,
   ClinicPartner,
@@ -27,6 +28,14 @@ import {
   extractMonthYear,
   sortMonthYearsDesc,
   getPreviousMonthYear,
+  MATERIAL_PRICES_SEED_VERSION,
+  seedMaterialPricesFromDefaults,
+  resolveMaterialPricesForClinic,
+  applyCatalogPricesToOrderData,
+  attachClinicMetaToPrices,
+  clinicIdForPartner,
+  clinicMaterialPriceKey,
+  materialConfigsFromClinicRows,
 } from './utils/financeUtils';
 import { calculateDebtRows, normalizeClinicName, DEBT_START_MONTH, debtMonthValue } from './utils/debtLedger';
 import { buildClinicPartnerIndex, createClinicNameResolver, getClinicOptions, prepareClinicPartnerChange } from './utils/clinicPartners';
@@ -95,6 +104,7 @@ function loadNavigationSession(key: string, isAdmin: boolean): { activeTab: NavT
 function Workspace({ profile }: { profile: UserProfile }) {
   const [orders, setOrders] = useState<DentalOrder[]>([]);
   const [materialPrices, setMaterialPrices] = useState<MaterialPriceConfig[]>([]);
+  const [clinicMaterialPrices, setClinicMaterialPrices] = useState<ClinicMaterialPriceRow[]>([]);
   const [clinicDebts, setClinicDebts] = useState<ClinicDebtRecord[]>([]);
   const [debtPayments, setDebtPayments] = useState<DebtPaymentRecord[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
@@ -103,6 +113,8 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const [labProfile, setLabProfile] = useState<LabProfileConfig>({ labName: '', tagline: '', hotline: '', address: '', email: '', bankName: '', bankAccountNumber: '', bankAccountHolder: '', directorName: '' });
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState('');
+  const seedingMaterialPricesRef = useRef(false);
+  const seedCommitFailedRef = useRef(false);
   const [pendingWrites, setPendingWrites] = useState(0);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -240,6 +252,8 @@ function Workspace({ profile }: { profile: UserProfile }) {
   useEffect(() => {
     setLoading(true);
     let importingPartners = false;
+    seedingMaterialPricesRef.current = false;
+    seedCommitFailedRef.current = false;
     return subscribeWorkspaceData(ownerId, (data) => {
       const migrationKey = 'at_dental_partners_migrated_' + ownerId;
       if (profile.uid === ownerId && !importingPartners && localStorage.getItem(migrationKey) !== 'done') {
@@ -258,8 +272,53 @@ function Workspace({ profile }: { profile: UserProfile }) {
         };
         void migrate().catch(() => setSyncError('Chưa chuyển được đối tác đã lưu trên máy. Bấm tải lại dữ liệu để thử lại.'));
       }
+
+      // Owner or admin can seed the sheet catalog into the materials table.
+      // Always push seeded.next into React state + localStorage immediately so the table
+      // shows the sheet even if Firestore rules only allow the workspace owner to write.
+      const pricesSeedKey = `at_dental_material_prices_seed_${MATERIAL_PRICES_SEED_VERSION}_${ownerId}`;
+      const canSeedMaterials = profile.uid === ownerId || profile.role === 'admin';
+      const seedPending = canSeedMaterials && localStorage.getItem(pricesSeedKey) !== 'done';
+
+      if (seedPending) {
+        const seeded = seedMaterialPricesFromDefaults(data.prices);
+        saveMaterialPrices(seeded.next);
+        setMaterialPrices(seeded.next);
+
+        if (!seeded.changed) {
+          localStorage.setItem(pricesSeedKey, 'done');
+        } else if (!seedingMaterialPricesRef.current && !seedCommitFailedRef.current) {
+          seedingMaterialPricesRef.current = true;
+          const changes: WorkspaceChange[] = seeded.next.map((price) => ({
+            collection: 'materialPrices' as const,
+            id: price.id,
+            data: price,
+            isNew: !data.prices.some((old) => old.id === price.id),
+          }));
+          for (const old of data.prices) {
+            if (!seeded.next.some((price) => price.id === old.id)) {
+              changes.push({ collection: 'materialPrices', id: old.id });
+            }
+          }
+          void commitWorkspaceChanges(ownerId, changes)
+            .then(() => {
+              saveMaterialPrices(seeded.next);
+              localStorage.setItem(pricesSeedKey, 'done');
+              seedingMaterialPricesRef.current = false;
+              seedCommitFailedRef.current = false;
+            })
+            .catch(() => {
+              seedingMaterialPricesRef.current = false;
+              seedCommitFailedRef.current = true;
+              setSyncError('Chưa cập nhật được bảng giá vật liệu sứ lên máy chủ. Bảng trên máy đã theo sheet — bấm tải lại dữ liệu để thử đồng bộ lại.');
+            });
+        }
+      } else if (!seedingMaterialPricesRef.current) {
+        setMaterialPrices(data.prices);
+      }
+
       setOrders(data.orders);
-      setMaterialPrices(data.prices);
+      setClinicMaterialPrices(data.clinicPrices || []);
       setClinicDebts(data.debts);
       setDebtPayments(data.payments);
       setDeliveries(data.deliveries);
@@ -268,7 +327,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
       setLabProfile(data.profile);
       setLoading(false);
     }, (error) => setSyncError(error.message));
-  }, [ownerId, profile.uid, refresh]);
+  }, [ownerId, profile.uid, profile.role, refresh]);
 
   useEffect(() => {
     if (profile.role !== 'admin') {
@@ -374,13 +433,35 @@ function Workspace({ profile }: { profile: UserProfile }) {
     }
   };
 
+  const pricesForOrderClinic = (clinicName: string) =>
+    resolveMaterialPricesForClinic(clinicName, materialPrices, clinicMaterialPrices);
+
   // Order CRUD
   const handleSaveOrder = (orderData: Partial<DentalOrder>) => {
     if (isReadOnly) return;
     if (editingOrder && editingOrder.id) {
+      const clinicName = orderData.clinicName ?? editingOrder.clinicName;
+      const material = orderData.material ?? editingOrder.material;
+      const clinicOrMaterialChanged =
+        clinicMaterialPriceKey(clinicName) !== clinicMaterialPriceKey(editingOrder.clinicName) ||
+        (material || '').trim().toLowerCase() !== (editingOrder.material || '').trim().toLowerCase();
+      let merged: Partial<DentalOrder> = { ...orderData };
+      if (clinicOrMaterialChanged) {
+        const lookedUp = getUnitPriceForMaterial(material || '', pricesForOrderClinic(clinicName || ''));
+        if (lookedUp > 0) {
+          merged = {
+            ...merged,
+            unitPrice: lookedUp,
+            totalAmount:
+              orderData.totalAmount !== undefined && Number(orderData.totalAmount) > 0
+                ? orderData.totalAmount
+                : (orderData.teethCount ?? editingOrder.teethCount ?? 1) * lookedUp,
+          };
+        }
+      }
       const updated = {
         ...editingOrder,
-        ...orderData,
+        ...merged,
       } as DentalOrder;
       if (updated.orderDate !== editingOrder.orderDate) {
         updated.monthYear = extractMonthYear(updated.orderDate);
@@ -396,10 +477,14 @@ function Workspace({ profile }: { profile: UserProfile }) {
       setOrders(newList);
       if (Object.keys(patch).length) write(saveWorkspaceRecord('orders', updated.id, patch, ownerId));
     } else {
-      const { newOrder, updatedOrders } = createOrder(
+      const priced = applyCatalogPricesToOrderData(
         orderData,
+        pricesForOrderClinic(orderData.clinicName || '')
+      );
+      const { newOrder, updatedOrders } = createOrder(
+        priced,
         orders,
-        materialPrices
+        pricesForOrderClinic(orderData.clinicName || '')
       );
       setOrders(updatedOrders);
       setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
@@ -412,7 +497,15 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
   const handleQuickAddOrder = async (data: Partial<DentalOrder>) => {
     if (isReadOnly) throw new Error('Tài khoản chỉ có quyền xem.');
-    const { newOrder } = createOrder(data, orders, materialPrices);
+    const priced = applyCatalogPricesToOrderData(
+      data,
+      pricesForOrderClinic(data.clinicName || '')
+    );
+    const { newOrder } = createOrder(
+      priced,
+      orders,
+      pricesForOrderClinic(data.clinicName || '')
+    );
     await saveWorkspaceRecord('orders', newOrder.id, newOrder, ownerId, true);
     setOrders((current) => current.some(({ id }) => id === newOrder.id) ? current : [newOrder, ...current]);
     setCreatedOrder({ id: newOrder.id, monthYear: newOrder.monthYear });
@@ -599,7 +692,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
   };
 
-  // Settings: Material Price Update
+  // Settings: Material Price Update (upsert + delete removed rows)
   const handleUpdateMaterialPrices = (
     newPrices: MaterialPriceConfig[],
     applyToExistingOrders: boolean
@@ -608,13 +701,19 @@ function Workspace({ profile }: { profile: UserProfile }) {
     setMaterialPrices(newPrices);
     saveMaterialPrices(newPrices);
     const changes: WorkspaceChange[] = newPrices.map((price) => ({
-      collection: 'materialPrices', id: price.id, data: price,
+      collection: 'materialPrices' as const, id: price.id, data: price,
       isNew: !materialPrices.some((old) => old.id === price.id),
     }));
+    for (const old of materialPrices) {
+      if (!newPrices.some((price) => price.id === old.id)) {
+        changes.push({ collection: 'materialPrices', id: old.id });
+      }
+    }
 
     if (applyToExistingOrders) {
       const recalculated = orders.map((o) => {
-        const uPrice = getUnitPriceForMaterial(o.material, newPrices);
+        const catalog = resolveMaterialPricesForClinic(o.clinicName, newPrices, clinicMaterialPrices);
+        const uPrice = getUnitPriceForMaterial(o.material, catalog);
         return {
           ...o,
           unitPrice: uPrice,
@@ -628,6 +727,66 @@ function Workspace({ profile }: { profile: UserProfile }) {
       })));
     }
     write(commitWorkspaceChanges(ownerId, changes));
+  };
+
+  const handleUpdateClinicMaterialPrices = (
+    clinicName: string,
+    nextPrices: MaterialPriceConfig[],
+    applyToExistingOrders: boolean
+  ) => {
+    if (isReadOnly) return;
+    const partner = buildClinicPartnerIndex(clinicPartners).get(clinicMaterialPriceKey(clinicName));
+    const clinicId = clinicIdForPartner(partner, clinicName);
+    const nextRows = attachClinicMetaToPrices(clinicName, clinicId, nextPrices);
+    const key = clinicMaterialPriceKey(clinicName);
+    const previous = clinicMaterialPrices.filter((row) => row.clinicKey === key);
+    const retained = clinicMaterialPrices.filter((row) => row.clinicKey !== key);
+    setClinicMaterialPrices([...retained, ...nextRows]);
+
+    const changes: WorkspaceChange[] = nextRows.map((row) => ({
+      collection: 'clinicMaterialPrices' as const,
+      id: row.id,
+      data: row,
+      isNew: !previous.some((old) => old.id === row.id),
+    }));
+    for (const old of previous) {
+      if (!nextRows.some((row) => row.id === old.id)) {
+        changes.push({ collection: 'clinicMaterialPrices', id: old.id });
+      }
+    }
+
+    if (applyToExistingOrders) {
+      const catalog = materialConfigsFromClinicRows(nextRows);
+      const recalculated = orders.map((o) => {
+        if (clinicMaterialPriceKey(o.clinicName) !== key) return o;
+        const uPrice = getUnitPriceForMaterial(o.material, catalog);
+        return {
+          ...o,
+          unitPrice: uPrice,
+          totalAmount: (o.teethCount || 1) * uPrice,
+        };
+      });
+      setOrders(recalculated);
+      saveOrders(recalculated);
+      changes.push(...recalculated
+        .filter((o) => clinicMaterialPriceKey(o.clinicName) === key)
+        .map(({ id, unitPrice, totalAmount }) => ({
+          collection: 'orders' as const, id, data: { unitPrice, totalAmount },
+        })));
+    }
+    write(commitWorkspaceChanges(ownerId, changes));
+  };
+
+  const handleDeleteClinicMaterialPrices = (clinicName: string) => {
+    if (isReadOnly) return;
+    const key = clinicMaterialPriceKey(clinicName);
+    const removed = clinicMaterialPrices.filter((row) => row.clinicKey === key);
+    if (removed.length === 0) return;
+    setClinicMaterialPrices(clinicMaterialPrices.filter((row) => row.clinicKey !== key));
+    write(commitWorkspaceChanges(
+      ownerId,
+      removed.map((row) => ({ collection: 'clinicMaterialPrices' as const, id: row.id }))
+    ));
   };
 
   const handleUpdateLabProfile = (profile: LabProfileConfig) => {
@@ -933,9 +1092,12 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 onDeleteClinicPartner={deleteClinicPartner}
                 orders={orders}
                 materialPrices={materialPrices}
+                clinicMaterialPrices={clinicMaterialPrices}
                 labProfile={labProfile}
                 warrantyLookupCode={warrantyLookupCode}
                 onUpdateMaterialPrices={handleUpdateMaterialPrices}
+                onUpdateClinicMaterialPrices={handleUpdateClinicMaterialPrices}
+                onDeleteClinicMaterialPrices={handleDeleteClinicMaterialPrices}
                 onUpdateLabProfile={handleUpdateLabProfile}
                 onSelectClinicForRevenue={(clinicName, monthYear) => {
                   setRevenueClinicFilter(clinicName);

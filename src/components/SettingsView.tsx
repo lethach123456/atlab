@@ -1,10 +1,23 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   DentalOrder,
   MaterialPriceConfig,
+  ClinicMaterialPriceRow,
   LabProfileConfig,
   ClinicPartner,
 } from '../types/dental';
+import {
+  MATERIAL_SHEET_FORM_LABELS,
+  MaterialSheetFormLabel,
+  categoryForSheetForm,
+  groupMaterialPricesForSheet,
+  materialSheetItemName,
+  suggestedRetailFromUnitPrice,
+  clinicHasCustomMaterialPrices,
+  clinicMaterialPriceKey,
+  listClinicsWithCustomMaterialPrices,
+  materialConfigsFromClinicRows,
+} from '../utils/financeUtils';
 import { ClinicsView } from './ClinicsView';
 import { FdiChartView } from './FdiChartView';
 import { MaterialsCatalogView } from './MaterialsCatalogView';
@@ -25,6 +38,8 @@ import {
   Users,
   Percent,
   BadgeDollarSign,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 export type SettingsSubTab = 'clinics' | 'fdichart' | 'materials' | 'warranty' | 'profile' | 'users' | 'commissions' | 'payroll';
@@ -43,12 +58,19 @@ interface SettingsViewProps {
   onUpdateClinicPartner: (originalName: string, partner: ClinicPartner) => Promise<void>;
   onDeleteClinicPartner: (clinicName: string) => Promise<void>;
   materialPrices: MaterialPriceConfig[];
+  clinicMaterialPrices: ClinicMaterialPriceRow[];
   labProfile: LabProfileConfig;
   warrantyLookupCode?: string;
   onUpdateMaterialPrices: (
     newPrices: MaterialPriceConfig[],
     applyToExistingOrders: boolean
   ) => void;
+  onUpdateClinicMaterialPrices: (
+    clinicName: string,
+    newPrices: MaterialPriceConfig[],
+    applyToExistingOrders: boolean
+  ) => void;
+  onDeleteClinicMaterialPrices: (clinicName: string) => void;
   onUpdateLabProfile: (profile: LabProfileConfig) => void;
   onSelectClinicForRevenue: (clinicName: string, monthYear?: string) => void;
   onExportClinicInvoice: (clinicOrders: DentalOrder[], clinicName: string, monthYear?: string) => void;
@@ -70,9 +92,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateClinicPartner,
   onDeleteClinicPartner,
   materialPrices,
+  clinicMaterialPrices,
   labProfile,
   warrantyLookupCode = '',
   onUpdateMaterialPrices,
+  onUpdateClinicMaterialPrices,
+  onDeleteClinicMaterialPrices,
   onUpdateLabProfile,
   onSelectClinicForRevenue,
   onExportClinicInvoice,
@@ -86,32 +111,320 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     (selectedSubTab === 'commissions' && !commissions) ||
     (selectedSubTab === 'payroll' && !payroll);
   const subTab = restricted ? 'clinics' : selectedSubTab;
+  const emptyBrandDraft = {
+    brand: '',
+    origin: '',
+    strengthMpa: '1200',
+    defaultWarranty: '15 năm',
+  };
+
   const [localPrices, setLocalPrices] = useState<MaterialPriceConfig[]>(materialPrices);
   const [localProfile, setLocalProfile] = useState<LabProfileConfig>(labProfile);
   const [savedNotice, setSavedNotice] = useState<string>('');
+  const [materialFormOpen, setMaterialFormOpen] = useState(false);
+  const [brandDraft, setBrandDraft] = useState(emptyBrandDraft);
+  const [materialError, setMaterialError] = useState('');
+  const [deleteBrandKey, setDeleteBrandKey] = useState<string | null>(null);
+  const [deleteExtraId, setDeleteExtraId] = useState<string | null>(null);
+  const [priceScope, setPriceScope] = useState<'shared' | 'clinic'>('shared');
+  const [selectedClinicName, setSelectedClinicName] = useState('');
+  const [removeClinicTableConfirm, setRemoveClinicTableConfirm] = useState(false);
+
+  const activePartners = useMemo(
+    () =>
+      clinicPartners
+        .filter((partner) => !partner.archived)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
+    [clinicPartners]
+  );
+
+  const clinicsWithCustom = useMemo(
+    () => listClinicsWithCustomMaterialPrices(clinicMaterialPrices),
+    [clinicMaterialPrices]
+  );
 
   React.useEffect(() => {
     if (initialSubTab) setSubTab(initialSubTab);
   }, [initialSubTab]);
 
   React.useEffect(() => {
-    setLocalPrices(materialPrices);
-  }, [materialPrices]);
+    if (priceScope === 'shared') {
+      setLocalPrices(materialPrices);
+      return;
+    }
+    if (!selectedClinicName) {
+      setLocalPrices([]);
+      return;
+    }
+    if (clinicHasCustomMaterialPrices(selectedClinicName, clinicMaterialPrices)) {
+      const key = clinicMaterialPriceKey(selectedClinicName);
+      setLocalPrices(
+        materialConfigsFromClinicRows(
+          clinicMaterialPrices.filter((row) => row.clinicKey === key)
+        )
+      );
+    } else {
+      // Chưa có bảng riêng: hiện bản sao bảng chung để tạo / chỉnh trước khi lưu.
+      setLocalPrices(materialPrices.map((item) => ({ ...item })));
+    }
+  }, [materialPrices, clinicMaterialPrices, priceScope, selectedClinicName]);
 
-  const handlePriceInputChange = (id: string, value: number) => {
+  const sheetView = useMemo(() => groupMaterialPricesForSheet(localPrices), [localPrices]);
+  const materialsReadOnly =
+    readOnly ||
+    (priceScope === 'clinic' && (!selectedClinicName || !clinicHasCustomMaterialPrices(selectedClinicName, clinicMaterialPrices)));
+
+  const makeMaterialId = (name: string, existing: MaterialPriceConfig[] = localPrices) => {
+    const slug = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 80);
+    const base = `mat_${slug || 'vat_lieu'}`;
+    if (!existing.some((item) => item.id === base)) return base;
+    return `${base}_${Date.now().toString(36)}`.slice(0, 128);
+  };
+
+  const beginAddBrandForm = () => {
+    if (priceScope === 'clinic' && !clinicHasCustomMaterialPrices(selectedClinicName, clinicMaterialPrices)) {
+      setMaterialError('Hãy tạo bảng giá riêng cho nha khoa trước khi thêm dòng sứ.');
+      return;
+    }
+    setMaterialError('');
+    setDeleteBrandKey(null);
+    setDeleteExtraId(null);
+    setSavedNotice('');
+    setBrandDraft(emptyBrandDraft);
+    setMaterialFormOpen(true);
+  };
+
+  const clinicCustomActive =
+    priceScope === 'clinic' &&
+    !!selectedClinicName &&
+    clinicHasCustomMaterialPrices(selectedClinicName, clinicMaterialPrices);
+
+  const handleSavePrices = (applyToAllOrders: boolean) => {
+    if (priceScope === 'clinic') {
+      if (!selectedClinicName) {
+        setMaterialError('Vui lòng chọn nha khoa để lưu bảng giá riêng.');
+        return;
+      }
+      onUpdateClinicMaterialPrices(selectedClinicName, localPrices, applyToAllOrders);
+      setSavedNotice(
+        applyToAllOrders
+          ? `Đã lưu bảng giá riêng cho ${selectedClinicName} và cập nhật đơn của nha khoa này!`
+          : `Đã lưu bảng giá riêng cho ${selectedClinicName}!`
+      );
+    } else {
+      onUpdateMaterialPrices(localPrices, applyToAllOrders);
+      setSavedNotice(
+        applyToAllOrders
+          ? 'Đã lưu bảng giá chung và cập nhật lại đơn (ưu tiên bảng riêng nếu có)!'
+          : 'Đã lưu bảng giá chung (dòng sứ & đơn giá)!'
+      );
+    }
+    setTimeout(() => setSavedNotice(''), 3000);
+  };
+
+  const commitPrices = (nextPrices: MaterialPriceConfig[], notice: string) => {
+    setLocalPrices(nextPrices);
+    if (priceScope === 'clinic') {
+      if (!selectedClinicName) {
+        setMaterialError('Vui lòng chọn nha khoa trước.');
+        return;
+      }
+      onUpdateClinicMaterialPrices(selectedClinicName, nextPrices, false);
+    } else {
+      onUpdateMaterialPrices(nextPrices, false);
+    }
+    setSavedNotice(notice);
+    setTimeout(() => setSavedNotice(''), 3000);
+  };
+
+  const handleCreateClinicTable = () => {
+    if (readOnly || !selectedClinicName) return;
+    const seeded = materialPrices.map((item) => ({ ...item }));
+    setLocalPrices(seeded);
+    onUpdateClinicMaterialPrices(selectedClinicName, seeded, false);
+    setSavedNotice(`Đã tạo bảng giá riêng cho ${selectedClinicName} (sao chép từ bảng chung).`);
+    setTimeout(() => setSavedNotice(''), 3000);
+  };
+
+  const handleRemoveClinicTable = () => {
+    if (readOnly || !selectedClinicName) return;
+    onDeleteClinicMaterialPrices(selectedClinicName);
+    setRemoveClinicTableConfirm(false);
+    setLocalPrices(materialPrices.map((item) => ({ ...item })));
+    setSavedNotice(`Đã gỡ bảng giá riêng của ${selectedClinicName}. Đơn mới sẽ dùng bảng giá chung.`);
+    setTimeout(() => setSavedNotice(''), 3500);
+  };
+
+  const handleSheetCellPrice = (
+    brandKey: string,
+    form: MaterialSheetFormLabel,
+    value: number
+  ) => {
+    if (materialsReadOnly || !Number.isFinite(value) || value < 0) return;
+    setLocalPrices((prev) => {
+      const view = groupMaterialPricesForSheet(prev);
+      const row = view.brandRows.find((item) => item.brandKey === brandKey);
+      if (!row) return prev;
+      const existing = row.byForm[form];
+      if (existing) {
+        return prev.map((item) =>
+          item.id === existing.id
+            ? {
+                ...item,
+                unitPrice: value,
+                retailSuggestedPrice: suggestedRetailFromUnitPrice(value),
+              }
+            : item
+        );
+      }
+      const name = materialSheetItemName(form, row.brand);
+      const nextItem: MaterialPriceConfig = {
+        id: makeMaterialId(name, prev),
+        materialKey: name.toLowerCase(),
+        name,
+        category: categoryForSheetForm(form),
+        origin: row.origin,
+        strengthMpa: row.strengthMpa,
+        defaultWarranty: row.defaultWarranty || '15 năm',
+        unitPrice: value,
+        retailSuggestedPrice: suggestedRetailFromUnitPrice(value),
+      };
+      return [...prev, nextItem];
+    });
+  };
+
+  const handleBrandOriginChange = (brandKey: string, origin: string) => {
+    if (materialsReadOnly) return;
+    setLocalPrices((prev) => {
+      const view = groupMaterialPricesForSheet(prev);
+      const row = view.brandRows.find((item) => item.brandKey === brandKey);
+      if (!row) return prev;
+      const idSet = new Set(row.configIds);
+      return prev.map((item) => (idSet.has(item.id) ? { ...item, origin } : item));
+    });
+  };
+
+  const handleBrandRename = (brandKey: string, nextBrandRaw: string) => {
+    if (materialsReadOnly) return;
+    const nextBrand = nextBrandRaw.trim();
+    if (!nextBrand) return;
+    setLocalPrices((prev) => {
+      const view = groupMaterialPricesForSheet(prev);
+      const row = view.brandRows.find((item) => item.brandKey === brandKey);
+      if (!row) return prev;
+      if (nextBrand === row.brand) return prev;
+      const nextKey = nextBrand.toLowerCase();
+      if (view.brandRows.some((item) => item.brandKey === nextKey)) {
+        setMaterialError('Tên dòng sứ đã tồn tại trong bảng.');
+        return prev;
+      }
+      setMaterialError('');
+      const idSet = new Set(row.configIds);
+      return prev.map((item) => {
+        if (!idSet.has(item.id)) return item;
+        let formLabel: MaterialSheetFormLabel | null = null;
+        for (const form of MATERIAL_SHEET_FORM_LABELS) {
+          if (row.byForm[form]?.id === item.id) {
+            formLabel = form;
+            break;
+          }
+        }
+        if (!formLabel) return item;
+        const name = materialSheetItemName(formLabel, nextBrand);
+        return {
+          ...item,
+          name,
+          materialKey: name.toLowerCase(),
+          category: categoryForSheetForm(formLabel),
+        };
+      });
+    });
+  };
+
+  const handleSubmitBrand = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (materialsReadOnly) return;
+    const brand = brandDraft.brand.trim();
+    if (!brand) {
+      setMaterialError('Vui lòng nhập tên dòng sứ.');
+      return;
+    }
+    const strengthMpa = Number(brandDraft.strengthMpa);
+    if (!Number.isFinite(strengthMpa) || strengthMpa < 0) {
+      setMaterialError('Độ cứng (MPa) không hợp lệ.');
+      return;
+    }
+    const brandKey = brand.toLowerCase();
+    if (sheetView.brandRows.some((item) => item.brandKey === brandKey)) {
+      setMaterialError('Tên dòng sứ đã tồn tại trong bảng.');
+      return;
+    }
+    const origin = brandDraft.origin.trim();
+    const defaultWarranty = brandDraft.defaultWarranty.trim() || '15 năm';
+    let working = [...localPrices];
+    const created: MaterialPriceConfig[] = MATERIAL_SHEET_FORM_LABELS.map((form) => {
+      const name = materialSheetItemName(form, brand);
+      const item: MaterialPriceConfig = {
+        id: makeMaterialId(name, working),
+        materialKey: name.toLowerCase(),
+        name,
+        category: categoryForSheetForm(form),
+        origin,
+        strengthMpa,
+        defaultWarranty,
+        unitPrice: 0,
+        retailSuggestedPrice: 0,
+      };
+      working = [...working, item];
+      return item;
+    });
+    commitPrices([...localPrices, ...created], 'Đã thêm dòng sứ mới (5 cột giá = 0).');
+    setMaterialFormOpen(false);
+    setBrandDraft(emptyBrandDraft);
+    setMaterialError('');
+  };
+
+  const handleDeleteBrand = () => {
+    if (materialsReadOnly || !deleteBrandKey) return;
+    const row = sheetView.brandRows.find((item) => item.brandKey === deleteBrandKey);
+    if (!row) {
+      setDeleteBrandKey(null);
+      return;
+    }
+    const idSet = new Set(row.configIds);
+    const nextPrices = localPrices.filter((item) => !idSet.has(item.id));
+    commitPrices(nextPrices, `Đã xóa dòng sứ ${row.brand} (cả 5 loại giá).`);
+    setDeleteBrandKey(null);
+    setMaterialFormOpen(false);
+  };
+
+  const handleExtraPriceChange = (id: string, value: number) => {
+    if (materialsReadOnly || !Number.isFinite(value) || value < 0) return;
     setLocalPrices((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, unitPrice: value } : p))
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              unitPrice: value,
+              retailSuggestedPrice: suggestedRetailFromUnitPrice(value),
+            }
+          : item
+      )
     );
   };
 
-  const handleSavePrices = (applyToAllOrders: boolean) => {
-    onUpdateMaterialPrices(localPrices, applyToAllOrders);
-    setSavedNotice(
-      applyToAllOrders
-        ? 'Đã lưu bảng giá và cập nhật lại toàn bộ đơn hàng!'
-        : 'Đã lưu danh mục dòng sứ & đơn giá tham khảo!'
-    );
-    setTimeout(() => setSavedNotice(''), 3000);
+  const handleDeleteExtra = () => {
+    if (materialsReadOnly || !deleteExtraId) return;
+    const nextPrices = localPrices.filter((item) => item.id !== deleteExtraId);
+    commitPrices(nextPrices, 'Đã xóa dòng phụ khỏi danh mục!');
+    setDeleteExtraId(null);
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -202,83 +515,484 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {subTab === 'materials' && (
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-teal-600" />
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Danh Mục Dòng Sứ & Bảng Giá Tham Khảo ({localPrices.length} dòng sứ)
-                  </h2>
-                  <p className="text-[11px] text-slate-500">
-                    Thành tiền của từng đơn trong bảng Doanh thu & Đơn hàng được tự nhập trực tiếp (không tự động lấy từ bảng giá).
-                  </p>
+            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-teal-600" />
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {priceScope === 'shared' ? 'Bảng giá chung' : 'Bảng giá theo nha khoa'}
+                      {' '}({sheetView.brandRows.length} dòng sứ)
+                    </h2>
+                    <p className="text-[11px] text-slate-500">
+                      {priceScope === 'shared'
+                        ? 'Bảng mặc định cho mọi nha khoa chưa có bảng riêng. Đơn mới lấy giá theo nha khoa → bảng riêng nếu có, không thì bảng này.'
+                        : 'Chọn nha khoa để tạo / chỉnh bảng giá riêng. Đơn của nha khoa đó sẽ ưu tiên bảng này.'}
+                    </p>
+                  </div>
                 </div>
+
+                {!readOnly && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(priceScope === 'shared' || clinicCustomActive) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={beginAddBrandForm}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-slate-900 hover:bg-slate-800 dark:bg-teal-600 dark:hover:bg-teal-500 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Thêm dòng sứ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSavePrices(false)}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          {priceScope === 'shared' ? 'Lưu bảng chung' : 'Lưu bảng riêng'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {!readOnly && (
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-50 dark:bg-slate-950/60">
                   <button
-                    onClick={() => handleSavePrices(false)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      setPriceScope('shared');
+                      setMaterialError('');
+                      setRemoveClinicTableConfirm(false);
+                      setMaterialFormOpen(false);
+                    }}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer ${
+                      priceScope === 'shared'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    Lưu Danh Mục Giá
+                    Bảng giá chung
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPriceScope('clinic');
+                      setMaterialError('');
+                      setRemoveClinicTableConfirm(false);
+                      setMaterialFormOpen(false);
+                      if (!selectedClinicName && activePartners[0]) {
+                        setSelectedClinicName(activePartners[0].name);
+                      }
+                    }}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer ${
+                      priceScope === 'clinic'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Bảng giá theo nha khoa
+                  </button>
+                </div>
+
+                {priceScope === 'clinic' && (
+                  <>
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                      <span className="whitespace-nowrap">Nha khoa</span>
+                      <select
+                        value={selectedClinicName}
+                        onChange={(e) => {
+                          setSelectedClinicName(e.target.value);
+                          setMaterialError('');
+                          setRemoveClinicTableConfirm(false);
+                          setMaterialFormOpen(false);
+                          setDeleteBrandKey(null);
+                        }}
+                        className="min-h-9 min-w-[12rem] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 font-bold text-slate-900 dark:text-white"
+                      >
+                        <option value="">— Chọn nha khoa —</option>
+                        {activePartners.map((partner) => {
+                          const hasCustom = clinicHasCustomMaterialPrices(partner.name, clinicMaterialPrices);
+                          return (
+                            <option key={partner.id || partner.name} value={partner.name}>
+                              {partner.name}{hasCustom ? ' · có bảng riêng' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    {clinicsWithCustom.length > 0 && (
+                      <span className="text-[11px] text-slate-500">
+                        Đang có bảng riêng: {clinicsWithCustom.join(', ')}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {priceScope === 'clinic' && selectedClinicName && !clinicCustomActive && !readOnly && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-amber-900 dark:text-amber-200">
+                    <strong>{selectedClinicName}</strong> đang dùng <strong>bảng giá chung</strong>.
+                    Tạo bảng riêng (sao chép từ bảng chung) rồi chỉnh giá áp dụng cho nha khoa này.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCreateClinicTable}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-700 hover:bg-amber-600 text-white cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tạo bảng giá riêng
+                  </button>
+                </div>
+              )}
+
+              {priceScope === 'clinic' && clinicCustomActive && !readOnly && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {!removeClinicTableConfirm ? (
+                    <button
+                      type="button"
+                      onClick={() => setRemoveClinicTableConfirm(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Gỡ bảng riêng (về bảng chung)
+                    </button>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-medium text-rose-700 dark:text-rose-300">
+                        Xóa toàn bộ bảng giá riêng của {selectedClinicName}?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleRemoveClinicTable}
+                        className="px-3 py-1.5 font-bold rounded-lg bg-rose-700 text-white hover:bg-rose-800 cursor-pointer"
+                      >
+                        Xác nhận gỡ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRemoveClinicTableConfirm(false)}
+                        className="px-3 py-1.5 font-bold rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
+            {!materialsReadOnly && materialFormOpen && (
+              <form
+                onSubmit={handleSubmitBrand}
+                className="px-4 py-4 border-b border-teal-100 dark:border-teal-900/50 bg-teal-50/40 dark:bg-teal-950/20 space-y-3"
+                aria-label="Thêm dòng sứ"
+              >
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Thêm dòng sứ mới
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Tạo 1 hàng trên bảng với 5 cột giá (mặc định 0). Điền giá trực tiếp trên bảng sau khi thêm.
+                </p>
+                {materialError && (
+                  <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                    {materialError}
+                  </p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+                  <label className="grid gap-1 font-medium text-slate-600 dark:text-slate-300">
+                    Dòng sứ *
+                    <input
+                      required
+                      maxLength={150}
+                      value={brandDraft.brand}
+                      onChange={(e) => setBrandDraft({ ...brandDraft, brand: e.target.value })}
+                      placeholder="VD: Cercon HT"
+                      className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500"
+                    />
+                  </label>
+                  <label className="grid gap-1 font-medium text-slate-600 dark:text-slate-300">
+                    Xuất xứ
+                    <input
+                      maxLength={150}
+                      value={brandDraft.origin}
+                      onChange={(e) => setBrandDraft({ ...brandDraft, origin: e.target.value })}
+                      placeholder="VD: Đức"
+                      className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500"
+                    />
+                  </label>
+                  <label className="grid gap-1 font-medium text-slate-600 dark:text-slate-300">
+                    Bảo hành mặc định
+                    <input
+                      maxLength={64}
+                      value={brandDraft.defaultWarranty}
+                      onChange={(e) => setBrandDraft({ ...brandDraft, defaultWarranty: e.target.value })}
+                      className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500"
+                    />
+                  </label>
+                  <label className="grid gap-1 font-medium text-slate-600 dark:text-slate-300">
+                    Độ cứng (MPa)
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={brandDraft.strengthMpa}
+                      onChange={(e) => setBrandDraft({ ...brandDraft, strengthMpa: e.target.value })}
+                      className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500"
+                    />
+                  </label>
+                </div>
+                <div className="flex gap-2 text-xs font-bold">
+                  <button
+                    type="submit"
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-white hover:bg-teal-800 cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Thêm vào bảng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMaterialFormOpen(false);
+                      setMaterialError('');
+                    }}
+                    className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!materialsReadOnly && deleteBrandKey && (
+              <div
+                role="group"
+                aria-label="Xác nhận xóa dòng sứ"
+                className="px-4 py-4 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 space-y-2"
+              >
+                <p className="text-sm font-bold text-slate-900 dark:text-white">
+                  Xóa dòng sứ{' '}
+                  {sheetView.brandRows.find((item) => item.brandKey === deleteBrandKey)?.brand || ''}?
+                </p>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Sẽ gỡ cả 5 loại giá (Sườn / Full / Veneer / Sườn implant / Full implant) khỏi danh mục. Đơn đã tạo vẫn giữ tên vật liệu cũ.
+                </p>
+                <div className="flex gap-2 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={handleDeleteBrand}
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-2 text-white hover:bg-rose-800 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Xóa dòng sứ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteBrandKey(null)}
+                    className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!materialsReadOnly && deleteExtraId && (
+              <div
+                role="group"
+                aria-label="Xác nhận xóa dòng phụ"
+                className="px-4 py-4 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 space-y-2"
+              >
+                <p className="text-sm font-bold text-slate-900 dark:text-white">
+                  Xóa {localPrices.find((item) => item.id === deleteExtraId)?.name || ''}?
+                </p>
+                <div className="flex gap-2 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={handleDeleteExtra}
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-2 text-white hover:bg-rose-800 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Xóa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteExtraId(null)}
+                    className="min-h-10 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {materialError && !materialFormOpen && (
+              <p role="alert" className="px-4 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 border-b border-rose-100 dark:border-rose-900">
+                {materialError}
+              </p>
+            )}
+
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[900px]">
                 <thead className="bg-slate-50 dark:bg-slate-950/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[11px]">
                   <tr>
-                    <th className="py-2.5 px-4">Dòng Sứ</th>
-                    <th className="py-2.5 px-4">Phân Khúc</th>
-                    <th className="py-2.5 px-4">Xuất Xứ</th>
-                    <th className="py-2.5 px-3">Độ Cứng</th>
-                    <th className="py-2.5 px-3">Bảo Hành</th>
-                    <th className="py-2.5 px-4 text-right">Đơn Giá Tham Khảo (VNĐ)</th>
+                    <th className="py-2.5 px-3 sticky left-0 bg-slate-50 dark:bg-slate-950/95 z-10">Dòng sứ</th>
+                    <th className="py-2.5 px-3">Xuất xứ</th>
+                    {MATERIAL_SHEET_FORM_LABELS.map((form) => (
+                      <th key={form} className="py-2.5 px-2 text-right whitespace-nowrap">
+                        {form}
+                      </th>
+                    ))}
+                    {!materialsReadOnly && <th className="py-2.5 px-3 text-right">Thao tác</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                  {localPrices.map((item) => (
+                  {sheetView.brandRows.map((row) => (
                     <tr
-                      key={item.id}
+                      key={row.brandKey}
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                     >
-                      <td className="py-2 px-4 font-bold text-slate-900 dark:text-white">
-                        {item.name}
-                      </td>
-                      <td className="py-2 px-4 text-slate-600 dark:text-slate-400">
-                        {item.category}
-                      </td>
-                      <td className="py-2 px-4 text-slate-500">{item.origin}</td>
-                      <td className="py-2 px-3 font-mono text-slate-700 dark:text-slate-300">
-                        {item.strengthMpa} MPa
-                      </td>
-                      <td className="py-2 px-3 font-semibold text-amber-700 dark:text-amber-400">
-                        {item.defaultWarranty}
-                      </td>
-                      <td className="py-2 px-4 text-right">
-                        <div className="inline-flex items-center gap-1.5">
+                      <td className="py-1.5 px-3 sticky left-0 bg-white dark:bg-slate-900 z-10">
+                        {materialsReadOnly ? (
+                          <span className="font-bold text-slate-900 dark:text-white">{row.brand}</span>
+                        ) : (
                           <input
-                            type="number"
-                            step={10000}
-                            disabled={readOnly}
-                            value={item.unitPrice}
-                            onChange={(e) =>
-                              handlePriceInputChange(item.id, Number(e.target.value))
-                            }
-                            className="w-28 px-2 py-1 text-right font-mono font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70"
+                            key={`${row.brandKey}-brand`}
+                            defaultValue={row.brand}
+                            onBlur={(e) => handleBrandRename(row.brandKey, e.target.value)}
+                            className="w-36 min-h-9 px-2 py-1 font-bold text-slate-900 dark:text-white bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-teal-500 rounded-md"
+                            aria-label={`Dòng sứ ${row.brand}`}
                           />
-                          <span className="text-slate-400 font-mono">₫</span>
-                        </div>
+                        )}
                       </td>
+                      <td className="py-1.5 px-3">
+                        {materialsReadOnly ? (
+                          <span className="text-slate-500">{row.origin}</span>
+                        ) : (
+                          <input
+                            value={row.origin}
+                            onChange={(e) => handleBrandOriginChange(row.brandKey, e.target.value)}
+                            className="w-24 min-h-9 px-2 py-1 text-slate-600 dark:text-slate-300 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-teal-500 rounded-md"
+                            aria-label={`Xuất xứ ${row.brand}`}
+                          />
+                        )}
+                      </td>
+                      {MATERIAL_SHEET_FORM_LABELS.map((form) => {
+                        const cell = row.byForm[form];
+                        return (
+                          <td key={form} className="py-1.5 px-2 text-right">
+                            <input
+                              type="number"
+                              step={1000}
+                              min={0}
+                              disabled={materialsReadOnly}
+                              value={cell?.unitPrice ?? ''}
+                              placeholder="—"
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                if (raw === '') return;
+                                handleSheetCellPrice(row.brandKey, form, Number(raw));
+                              }}
+                              className="w-[5.5rem] px-1.5 py-1 text-right font-mono font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70"
+                              aria-label={`${form} ${row.brand}`}
+                            />
+                          </td>
+                        );
+                      })}
+                      {!materialsReadOnly && (
+                        <td className="py-1.5 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteBrandKey(row.brandKey);
+                              setDeleteExtraId(null);
+                              setMaterialFormOpen(false);
+                              setSavedNotice('');
+                            }}
+                            aria-label={`Xóa ${row.brand}`}
+                            className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 py-1.5 text-rose-700 hover:bg-rose-500/10 cursor-pointer dark:text-rose-300 font-bold"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Xóa
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
+                  {sheetView.brandRows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={materialsReadOnly ? 7 : 8}
+                        className="px-4 py-6 text-center text-slate-500"
+                      >
+                        Chưa có dòng sứ nào. Bấm &quot;Thêm dòng sứ&quot; để tạo danh mục.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {sheetView.extras.length > 0 && (
+              <div className="border-t border-slate-200 dark:border-slate-800">
+                <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-950/40">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    Dòng phụ (không theo sheet) — ví dụ Cùi giả
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[11px]">
+                      <tr>
+                        <th className="py-2 px-4">Dòng sứ</th>
+                        <th className="py-2 px-4">Xuất xứ</th>
+                        <th className="py-2 px-4 text-right">Đơn giá (VNĐ)</th>
+                        {!materialsReadOnly && <th className="py-2 px-4 text-right">Thao tác</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                      {sheetView.extras.map((item) => (
+                        <tr key={item.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                          <td className="py-2 px-4 font-bold text-slate-900 dark:text-white">{item.name}</td>
+                          <td className="py-2 px-4 text-slate-500">{item.origin}</td>
+                          <td className="py-2 px-4 text-right">
+                            <input
+                              type="number"
+                              step={10000}
+                              min={0}
+                              disabled={materialsReadOnly}
+                              value={item.unitPrice}
+                              onChange={(e) => handleExtraPriceChange(item.id, Number(e.target.value))}
+                              className="w-28 px-2 py-1 text-right font-mono font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70"
+                            />
+                          </td>
+                          {!materialsReadOnly && (
+                            <td className="py-2 px-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteExtraId(item.id);
+                                  setDeleteBrandKey(null);
+                                  setMaterialFormOpen(false);
+                                }}
+                                aria-label={`Xóa ${item.name}`}
+                                className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 py-1.5 text-rose-700 hover:bg-rose-500/10 cursor-pointer dark:text-rose-300 font-bold"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Xóa
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           <MaterialsCatalogView />

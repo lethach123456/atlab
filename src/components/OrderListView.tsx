@@ -718,12 +718,20 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
               {currentOrders.map((order) => {
                 const isChecked = selectedIds.has(order.id);
+                // Soft cue for orders entered in the last hour (createdAt is epoch ms)
+                const isRecent =
+                  Number(order.createdAt) > 0 &&
+                  Date.now() - Number(order.createdAt) < 60 * 60 * 1000;
                 return (
                   <tr
                     key={order.id}
                     data-order-id={order.id}
                     className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
-                      isChecked ? 'bg-teal-500/10' : ''
+                      isChecked
+                        ? 'bg-teal-500/10'
+                        : isRecent
+                          ? 'bg-slate-100/90 dark:bg-slate-700/40 shadow-[inset_3px_0_0_0_rgba(148,163,184,0.7)] dark:shadow-[inset_3px_0_0_0_rgba(100,116,139,0.7)]'
+                          : ''
                     }`}
                   >
                     <td className="py-2 px-2.5 text-center">

@@ -296,6 +296,30 @@ service cloud.firestore {
         data.strengthMpa is number && data.strengthMpa >= 0;
     }
 
+    function isValidClinicMaterialPrice(data) {
+      return data.keys().hasAll([
+        'id', 'ownerId', 'clinicId', 'clinicKey', 'clinicName',
+        'materialKey', 'name', 'category', 'origin', 'unitPrice',
+        'retailSuggestedPrice', 'defaultWarranty', 'strengthMpa', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'id', 'ownerId', 'clinicId', 'clinicKey', 'clinicName',
+        'materialKey', 'name', 'category', 'origin', 'unitPrice',
+        'retailSuggestedPrice', 'defaultWarranty', 'strengthMpa', 'createdAt', 'updatedAt'
+      ]) &&
+        data.clinicId is string && data.clinicId.size() >= 1 && data.clinicId.size() <= 128 &&
+        data.clinicKey is string && data.clinicKey.size() >= 1 && data.clinicKey.size() <= 250 &&
+        data.clinicName is string && data.clinicName.size() >= 1 && data.clinicName.size() <= 250 &&
+        data.materialKey is string && data.materialKey.size() <= 150 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 150 &&
+        data.category is string && data.category.size() <= 150 &&
+        data.origin is string && data.origin.size() <= 150 &&
+        data.unitPrice is number && data.unitPrice >= 0 &&
+        data.retailSuggestedPrice is number && data.retailSuggestedPrice >= 0 &&
+        data.defaultWarranty is string && data.defaultWarranty.size() <= 64 &&
+        data.strengthMpa is number && data.strengthMpa >= 0;
+    }
+
+
     function isValidClinicDebt(data) {
       return data.keys().hasAll([
         'id', 'ownerId', 'clinicName', 'monthYear', 'oldDebt', 'currentMonthDebt',
@@ -496,6 +520,15 @@ service cloud.firestore {
       allow update: if canUpdate(incoming(), materialId) && isValidMaterialPrice(incoming());
       allow delete: if isEditor(resource.data.ownerId);
     }
+
+    match /clinicMaterialPrices/{priceId} {
+      allow get: if isMember() && (resource == null || isOwner(resource.data.ownerId));
+      allow list: if isOwner(resource.data.ownerId);
+      allow create: if canCreate(incoming(), priceId) && isValidClinicMaterialPrice(incoming());
+      allow update: if canUpdate(incoming(), priceId) && isValidClinicMaterialPrice(incoming());
+      allow delete: if isEditor(resource.data.ownerId);
+    }
+
 
     match /clinicDebts/{debtId} {
       allow get: if isMember() && (resource == null || isOwner(resource.data.ownerId));
