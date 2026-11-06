@@ -1152,6 +1152,8 @@ function Workspace({ profile }: { profile: UserProfile }) {
         onSave={handleSaveOrder}
         initialOrder={editingOrder}
         clinicOptions={clinicOptions}
+        materialPrices={materialPrices}
+        clinicMaterialPrices={clinicMaterialPrices}
       />
 
       <InvoicePdfModal

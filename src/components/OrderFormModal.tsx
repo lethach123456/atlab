@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { DentalOrder } from '../types/dental';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { DentalOrder, MaterialPriceConfig, ClinicMaterialPriceRow } from '../types/dental';
 import { FdiTeethPicker } from './FdiTeethPicker';
 import { extractWarrantyYears } from '../utils/csvParser';
 import { parseTeethNotation } from '../utils/fdiTeeth';
+import {
+  getUnitPriceForMaterial,
+  resolveMaterialPricesForClinic,
+} from '../utils/financeUtils';
 import { X, Save, Sparkles, Building2, User, Phone, Calendar, ShieldCheck, FileText } from 'lucide-react';
 
 interface OrderFormModalProps {
@@ -11,33 +15,19 @@ interface OrderFormModalProps {
   onSave: (orderData: Partial<DentalOrder>) => void;
   initialOrder?: DentalOrder | null;
   clinicOptions: { name: string; address: string }[];
+  materialPrices?: MaterialPriceConfig[];
+  clinicMaterialPrices?: ClinicMaterialPriceRow[];
 }
 
-const COMMON_MATERIALS = [
-  'Full zirco razor',
-  'Sườn zirco Razor',
-  'Veneer zirco Razor',
-  'Full zirco razor trên ipl',
-  'Zirconia',
-  'Zirconia (RAZOR)',
-  'CERCON',
-  'full cercon',
-  'Veneer Cercon',
-  'Sườn cercon',
-  'full ddbio',
-  'Full orodent',
+const FALLBACK_MATERIALS = [
+  'Full Zirconia',
+  'Full UNC',
+  'Full DD Bio Cao Cấp',
+  'Full Cercon HT',
   'Cùi giả',
-  'Ziconia IPL',
-  'Implant Zirconia',
-  'Phôi Đơn Lớp Razor',
-  'Zirconia Multilayer',
-  'NACERA (ĐỨC)',
-  'LAVA PLUS',
-  'DDBIO',
-  'EMAX',
-  'DIAMOND',
-  'Venus',
 ];
+
+const SUGGESTED_BADGE_MS = 1800;
 
 const COMMON_WARRANTIES = [
   '1 năm',
@@ -69,12 +59,14 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   onSave,
   initialOrder,
   clinicOptions,
+  materialPrices = [],
+  clinicMaterialPrices = [],
 }) => {
   const [warrantyCode, setWarrantyCode] = useState('');
   const [patientName, setPatientName] = useState('');
   const [phone, setPhone] = useState('');
   const [clinicName, setClinicName] = useState('');
-  const [material, setMaterial] = useState('Full zirco razor');
+  const [material, setMaterial] = useState('Full Zirconia');
   const [warrantyPeriod, setWarrantyPeriod] = useState('15 năm');
   const [orderDate, setOrderDate] = useState('');
   const [teethText, setTeethText] = useState('11-21');
@@ -85,16 +77,72 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<DentalOrder['status']>('');
   const [formError, setFormError] = useState('');
+  const [showSuggestedBadge, setShowSuggestedBadge] = useState(false);
+
+  const lastSuggestionRef = useRef(0);
+  const totalAmountRef = useRef(0);
+  const badgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hydrateGenRef = useRef(0);
+  const skipAutofillGenRef = useRef(0);
+  const pendingAmountRef = useRef(0);
+  totalAmountRef.current = totalAmountInput;
+
+  const catalogForClinic = useMemo(
+    () => resolveMaterialPricesForClinic(clinicName, materialPrices, clinicMaterialPrices),
+    [clinicName, materialPrices, clinicMaterialPrices]
+  );
+
+  const materialOptions = useMemo(() => {
+    const names = catalogForClinic.length
+      ? catalogForClinic.map((row) => row.name.trim()).filter(Boolean)
+      : materialPrices.map((row) => row.name.trim()).filter(Boolean);
+    const merged = names.length ? names : [...FALLBACK_MATERIALS];
+    if (material && !merged.includes(material)) merged.unshift(material);
+    return Array.from(new Set(merged));
+  }, [catalogForClinic, materialPrices, material]);
+
+  const suggestedUnitPrice = useMemo(() => {
+    if (!clinicName.trim() || !material.trim()) return 0;
+    return getUnitPriceForMaterial(material, catalogForClinic);
+  }, [clinicName, material, catalogForClinic]);
+
+  const suggestedTotal = useMemo(() => {
+    if (suggestedUnitPrice <= 0) return 0;
+    const count = Math.max(0, Number(teethCountInput) || 0);
+    return count * suggestedUnitPrice;
+  }, [suggestedUnitPrice, teethCountInput]);
+
+  const flashSuggestedBadge = () => {
+    if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
+    setShowSuggestedBadge(true);
+    badgeTimerRef.current = setTimeout(() => {
+      setShowSuggestedBadge(false);
+      badgeTimerRef.current = null;
+    }, SUGGESTED_BADGE_MS);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
     setFormError('');
+    setShowSuggestedBadge(false);
+    lastSuggestionRef.current = 0;
+    if (badgeTimerRef.current) {
+      clearTimeout(badgeTimerRef.current);
+      badgeTimerRef.current = null;
+    }
+    // Skip one autofill pass so we don't overwrite hydrated amount with a stale suggestion.
+    const gen = hydrateGenRef.current + 1;
+    hydrateGenRef.current = gen;
+    skipAutofillGenRef.current = gen;
+
     if (initialOrder?.id) {
+      const amount = initialOrder.totalAmount || 0;
+      pendingAmountRef.current = amount;
       setWarrantyCode(initialOrder.warrantyCode || '');
       setPatientName(initialOrder.patientName || '');
       setPhone(initialOrder.phone || '');
       setClinicName(initialOrder.clinicName || '');
-      setMaterial(initialOrder.material || 'Full zirco razor');
+      setMaterial(initialOrder.material || 'Full Zirconia');
       setWarrantyPeriod(initialOrder.warrantyPeriod || '15 năm');
       setOrderDate(initialOrder.orderDate || '');
       setTeethText(initialOrder.teeth || '');
@@ -103,18 +151,19 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       setTeethCountInput(
         initialOrder.teethCount !== undefined ? initialOrder.teethCount : parsed.count || 1
       );
-      setTotalAmountInput(initialOrder.totalAmount || 0);
+      setTotalAmountInput(amount);
       setToothForm(initialOrder.toothForm ?? '');
       setNotes(initialOrder.notes || '');
       setStatus(initialOrder.status ?? '');
     } else {
       // Auto generate warranty code
+      pendingAmountRef.current = 0;
       const randomCode = `AT${Math.floor(10000 + Math.random() * 90000)}`;
       setWarrantyCode(randomCode);
       setPatientName('');
       setPhone('');
       setClinicName('');
-      setMaterial('Full zirco razor');
+      setMaterial(materialPrices[0]?.name || 'Full Zirconia');
       setWarrantyPeriod('15 năm');
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
@@ -131,7 +180,44 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       setNotes('');
       setStatus('');
     }
-  }, [initialOrder, isOpen]);
+  }, [initialOrder, isOpen]); // materialPrices read only for new-order default name
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (suggestedTotal <= 0) return;
+
+    // First pass after hydrate: seed lastSuggestion from pending amount, never overwrite.
+    if (skipAutofillGenRef.current === hydrateGenRef.current) {
+      skipAutofillGenRef.current = -1;
+      const pending = pendingAmountRef.current;
+      if (pending === suggestedTotal) {
+        lastSuggestionRef.current = suggestedTotal;
+      } else {
+        lastSuggestionRef.current = 0;
+      }
+      return;
+    }
+
+    const current = totalAmountRef.current;
+    const prev = lastSuggestionRef.current;
+
+    if (current === suggestedTotal) {
+      lastSuggestionRef.current = suggestedTotal;
+      return;
+    }
+
+    if (current === 0 || current === prev) {
+      setTotalAmountInput(suggestedTotal);
+      lastSuggestionRef.current = suggestedTotal;
+      flashSuggestedBadge();
+    }
+  }, [isOpen, suggestedTotal]);
+
+  useEffect(() => {
+    return () => {
+      if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current);
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -162,7 +248,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       phone: phone.trim(),
       clinicName,
       clinicAddress: selectedClinic ? selectedClinic.address : (legacyClinic && initialOrder?.clinicAddress) || '',
-      material: material.trim() || 'Full zirco razor',
+      material: material.trim() || materialOptions[0] || 'Full Zirconia',
       warrantyPeriod: selectedWarranty,
       warrantyYears: initialOrder?.warrantyPeriod === selectedWarranty
         ? initialOrder.warrantyYears
@@ -171,7 +257,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       teeth: teethText.trim(),
       teethCount: Math.max(0, Number(teethCountInput) || 0),
       totalAmount: Math.max(0, Number(totalAmountInput) || 0),
-      unitPrice: initialOrder?.unitPrice ?? 0,
+      unitPrice: suggestedUnitPrice > 0 ? suggestedUnitPrice : (initialOrder?.unitPrice ?? 0),
       toothForm: toothForm.trim(),
       notes: notes.trim(),
       status: status,
@@ -291,8 +377,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   onChange={(e) => setMaterial(e.target.value)}
                   className="w-full min-h-11 px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500 font-medium text-slate-900"
                 >
-                  {!COMMON_MATERIALS.includes(material) && <option value={material}>{material}</option>}
-                  {COMMON_MATERIALS.map((m) => (
+                  {materialOptions.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
@@ -380,16 +465,31 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="order-amount" className="block text-[11px] font-bold text-teal-700 mb-1">
+                <div className="relative">
+                  <label htmlFor="order-amount" className="block text-[11px] font-bold text-teal-700 mb-1 pr-14">
                     Thành tiền (VNĐ)
                   </label>
+                  <span
+                    aria-hidden={!showSuggestedBadge}
+                    className={`pointer-events-none absolute right-0 top-0 text-[10px] font-semibold uppercase tracking-wide text-teal-600/80 transition-opacity duration-300 ${
+                      showSuggestedBadge ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  >
+                    đề xuất
+                  </span>
                   <input id="order-amount"
                     type="number"
                     step={1}
                     min={0}
                     value={totalAmountInput}
-                    onChange={(e) => setTotalAmountInput(Number(e.target.value))}
+                    onChange={(e) => {
+                      if (badgeTimerRef.current) {
+                        clearTimeout(badgeTimerRef.current);
+                        badgeTimerRef.current = null;
+                      }
+                      setShowSuggestedBadge(false);
+                      setTotalAmountInput(Number(e.target.value));
+                    }}
                     className="w-full min-h-11 px-2.5 py-1.5 text-sm font-mono font-extrabold text-teal-800 bg-teal-50/50 border border-teal-400 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                     placeholder="Nhập số tiền..."
                   />
