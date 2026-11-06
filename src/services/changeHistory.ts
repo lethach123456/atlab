@@ -24,6 +24,7 @@ import {
   type ChangeAction,
   type FieldChange,
 } from '../utils/changeDiff';
+import { buildRollbackPlan, type UndoSnapshot } from '../utils/changeUndo';
 
 export const CHANGE_HISTORY_COLLECTION = 'changeHistory';
 export const CHANGE_HISTORY_PAGE_SIZE = 40;
@@ -41,6 +42,11 @@ export interface ChangeHistoryEntry {
   summary: string;
   changes: FieldChange[];
   createdAtMs: number;
+  canUndo?: boolean;
+  undoBlockReason?: string;
+  beforeSnapshot?: UndoSnapshot | null;
+  afterSnapshot?: UndoSnapshot | null;
+  undoOf?: string;
 }
 
 export interface ChangeHistoryPage {
@@ -83,6 +89,8 @@ export function buildHistoryDocument(input: {
   entityId: string;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
+  undoOf?: string;
+  forceId?: string;
 }): { id: string; data: DocumentData } {
   const actor = actorFields();
   const labelSource = input.action === 'delete' ? input.before : input.after || input.before;
@@ -90,22 +98,29 @@ export function buildHistoryDocument(input: {
   const changes = buildFieldChanges(input.before, input.after, input.action).slice(0, 40);
   const typeLabel = ENTITY_LABELS[input.entityType] || input.entityType;
   const summary = `${actionLabelVi(input.action)} ${typeLabel}: ${entityLabel}`.slice(0, 400);
-  const id = newHistoryId();
-  return {
+  const id = input.forceId || newHistoryId();
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    throw new Error('Mã lịch sử không hợp lệ.');
+  }
+  const rollback = buildRollbackPlan(input.action, input.entityType, input.before, input.after);
+  const data: DocumentData = {
     id,
-    data: {
-      id,
-      ownerId: input.ownerId,
-      ...actor,
-      action: input.action,
-      entityType: input.entityType.slice(0, 64),
-      entityId: input.entityId.slice(0, 128),
-      entityLabel,
-      summary,
-      changes,
-      createdAt: serverTimestamp(),
-    },
+    ownerId: input.ownerId,
+    ...actor,
+    action: input.action,
+    entityType: input.entityType.slice(0, 64),
+    entityId: input.entityId.slice(0, 128),
+    entityLabel,
+    summary,
+    changes,
+    canUndo: rollback.canUndo,
+    undoBlockReason: rollback.undoBlockReason.slice(0, 300),
+    createdAt: serverTimestamp(),
   };
+  if (rollback.beforeSnapshot) data.beforeSnapshot = rollback.beforeSnapshot;
+  if (rollback.afterSnapshot) data.afterSnapshot = rollback.afterSnapshot;
+  if (input.undoOf) data.undoOf = String(input.undoOf).slice(0, 128);
+  return { id, data };
 }
 
 /** Attach one append-only history doc to an existing write batch (same commit). */
@@ -182,6 +197,14 @@ function mapEntry(id: string, data: DocumentData): ChangeHistoryEntry {
         ? createdAt
         : 0;
   const rawChanges = Array.isArray(data.changes) ? data.changes : [];
+  const beforeSnapshot =
+    data.beforeSnapshot && typeof data.beforeSnapshot === 'object' && !Array.isArray(data.beforeSnapshot)
+      ? (data.beforeSnapshot as UndoSnapshot)
+      : null;
+  const afterSnapshot =
+    data.afterSnapshot && typeof data.afterSnapshot === 'object' && !Array.isArray(data.afterSnapshot)
+      ? (data.afterSnapshot as UndoSnapshot)
+      : null;
   return {
     id,
     ownerId: String(data.ownerId || ''),
@@ -199,6 +222,11 @@ function mapEntry(id: string, data: DocumentData): ChangeHistoryEntry {
       after: row?.after == null ? null : String(row.after),
     })),
     createdAtMs,
+    canUndo: typeof data.canUndo === 'boolean' ? data.canUndo : undefined,
+    undoBlockReason: data.undoBlockReason ? String(data.undoBlockReason) : undefined,
+    beforeSnapshot,
+    afterSnapshot,
+    undoOf: data.undoOf ? String(data.undoOf) : undefined,
   };
 }
 

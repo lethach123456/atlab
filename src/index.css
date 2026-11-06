@@ -54,6 +54,37 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Orders table: keep inline editors inside fixed column widths (no auto min-content jump). */
+.orders-table {
+  table-layout: fixed;
+}
+.orders-table th,
+.orders-table td {
+  min-width: 0;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.orders-table input,
+.orders-table select,
+.orders-table button {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+.orders-table input,
+.orders-table select {
+  width: 100%;
+}
+
+/* Login: mobile-first compact viewport, no sideways scroll */
+.login-screen {
+  box-sizing: border-box;
+}
+.login-screen input,
+.login-screen button {
+  touch-action: manipulation;
+}
+
 /* 2026 Spatial Glassmorphic Bento Card */
 .bento-card {
   background: rgba(255, 255, 255, 0.84);

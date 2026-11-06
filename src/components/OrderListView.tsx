@@ -36,18 +36,20 @@ import {
 type SortField = 'id' | 'createdAt' | 'orderDate' | 'warrantyCode' | 'patientName' | 'clinicName' | 'teethCount' | 'totalAmount';
 type EditableField = Exclude<SortField, 'id' | 'createdAt'> | 'teeth' | 'phone' | 'warrantyPeriod' | 'material' | 'notes';
 
-const orderColumns: { field: QuickOrderField; label: string; sort?: SortField; width: string }[] = [
-  { field: 'warrantyCode', label: 'Mã BH', sort: 'warrantyCode', width: 'min-w-24' },
-  { field: 'patientName', label: 'KH', sort: 'patientName', width: 'min-w-36' },
-  { field: 'clinicName', label: 'Nha khoa', sort: 'clinicName', width: 'min-w-36' },
-  { field: 'orderDate', label: 'Ngày', sort: 'orderDate', width: 'min-w-27' },
-  { field: 'teeth', label: 'Vị trí răng', width: 'min-w-28' },
-  { field: 'teethCount', label: 'SL', sort: 'teethCount', width: 'min-w-15' },
-  { field: 'warrantyPeriod', label: 'Thời gian BH', width: 'min-w-28' },
-  { field: 'material', label: 'Dòng sứ', width: 'min-w-32' },
-  { field: 'totalAmount', label: 'Thành tiền', sort: 'totalAmount', width: 'min-w-28' },
-  { field: 'notes', label: 'Ghi chú', width: 'min-w-32' },
+const orderColumns: { field: QuickOrderField; label: string; sort?: SortField; widthPct: number }[] = [
+  { field: 'warrantyCode', label: 'Mã BH', sort: 'warrantyCode', widthPct: 7 },
+  { field: 'patientName', label: 'KH', sort: 'patientName', widthPct: 11 },
+  { field: 'clinicName', label: 'Nha khoa', sort: 'clinicName', widthPct: 12 },
+  { field: 'orderDate', label: 'Ngày', sort: 'orderDate', widthPct: 8 },
+  { field: 'teeth', label: 'Vị trí răng', widthPct: 8 },
+  { field: 'teethCount', label: 'SL', sort: 'teethCount', widthPct: 4 },
+  { field: 'warrantyPeriod', label: 'Thời gian BH', widthPct: 8 },
+  { field: 'material', label: 'Dòng sứ', widthPct: 9 },
+  { field: 'totalAmount', label: 'Thành tiền', sort: 'totalAmount', widthPct: 8 },
+  { field: 'notes', label: 'Ghi chú', widthPct: 10 },
 ];
+/** Checkbox + data cols + actions = 100%. Locks layout under table-fixed so inline inputs cannot widen columns. */
+const orderTableColPercents = [3, ...orderColumns.map((column) => column.widthPct), 12];
 
 const fieldMaxLengths: Partial<Record<EditableField, number>> = {
   warrantyCode: 64,
@@ -396,7 +398,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       return (
         <span
           title={raw || undefined}
-          className={`block w-full min-w-0 truncate px-1.5 py-1 ${emphasized ? 'font-bold' : ''} ${secondary ? 'text-[10px] text-slate-500 dark:text-slate-400' : ''}`}
+          className={`box-border block h-7 w-full min-w-0 max-w-full truncate px-1.5 py-0 leading-7 ${emphasized ? 'font-bold' : ''} ${secondary ? 'text-[10px] leading-7 text-slate-500 dark:text-slate-400' : ''}`}
         >
           {display}
         </span>
@@ -410,7 +412,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           value={raw}
           title={raw || `Chọn ${label.toLowerCase()}`}
           onChange={(event) => saveCell(order, field, event.currentTarget.value, false)}
-          className="w-full min-w-0 cursor-pointer truncate rounded border border-slate-200 bg-white px-1.5 py-1 hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-teal-500 dark:border-slate-700 dark:bg-slate-900"
+          className="box-border h-7 w-full min-w-0 max-w-full cursor-pointer truncate rounded border border-slate-200 bg-white px-1.5 py-0 text-[inherit] leading-none hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-teal-500 dark:border-slate-700 dark:bg-slate-900"
         >
           {!options.includes(raw) && (
             <option value={raw} disabled>{raw || `Chọn ${label.toLowerCase()}`}</option>
@@ -426,6 +428,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
       return (
         <input
           autoFocus
+          size={1}
           aria-label={label}
           aria-invalid={Boolean(editError)}
           aria-describedby={editError ? 'order-cell-error' : undefined}
@@ -445,7 +448,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
               setEditError('');
             }
           }}
-          className={`w-full min-w-0 rounded border border-teal-500 bg-white px-1.5 py-1 text-slate-900 focus:ring-2 focus:ring-teal-500 dark:bg-slate-900 dark:text-white ${emphasized ? 'font-bold' : ''}`}
+          className={`box-border h-7 w-full min-w-0 max-w-full rounded border border-teal-500 bg-white px-1.5 py-0 text-slate-900 leading-none focus:ring-2 focus:ring-teal-500/40 focus:ring-inset dark:bg-slate-900 dark:text-white ${emphasized ? 'font-bold' : ''}`}
         />
       );
     }
@@ -459,7 +462,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           setEditingCell({ id: order.id, field });
           setEditError('');
         }}
-        className={`group flex w-full items-center gap-1 rounded border border-transparent px-1.5 py-1 text-left hover:border-teal-500 hover:bg-teal-500/10 focus-visible:outline-2 focus-visible:outline-teal-500 ${secondary ? 'text-[10px] text-slate-500 dark:text-slate-400' : ''}`}
+        className={`group flex h-7 w-full min-w-0 max-w-full items-center gap-1 rounded border border-transparent px-1.5 py-0 text-left leading-none hover:border-teal-500 hover:bg-teal-500/10 focus-visible:outline-2 focus-visible:outline-teal-500 ${secondary ? 'text-[10px] text-slate-500 dark:text-slate-400' : ''}`}
       >
         <span className={`min-w-0 flex-1 truncate ${emphasized ? 'font-bold' : ''}`}>{display}</span>
         <Edit3 aria-hidden="true" className="size-3 shrink-0 text-slate-400 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
@@ -702,10 +705,15 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
           </p>
         )}
         <div ref={tableScrollRef} className="overflow-x-auto" onPointerMove={moveFill} onPointerUp={finishFill} onPointerCancel={finishFill}>
-          <table ref={tableRef} className="w-full text-left text-xs">
+          <table ref={tableRef} className="orders-table w-full min-w-[1180px] table-fixed text-left text-xs">
+            <colgroup>
+              {orderTableColPercents.map((widthPct, index) => (
+                <col key={index} style={{ width: `${widthPct}%` }} />
+              ))}
+            </colgroup>
             <thead className="bg-slate-50 dark:bg-slate-950/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[10px]">
               <tr>
-                <th className="py-2.5 px-2.5 w-9 text-center">
+                <th className="py-2.5 px-2.5 text-center">
                   <button
                     onClick={handleSelectAllOnPage}
                     className="text-slate-400 hover:text-slate-700"
@@ -718,12 +726,12 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                     )}
                   </button>
                 </th>
-                {orderColumns.map(({ field, label, sort, width }) => (
+                {orderColumns.map(({ field, label, sort }) => (
                   <th
                     key={field}
                     scope="col"
                     aria-sort={sort && sortField === sort ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                    className={`whitespace-nowrap px-2 py-2.5 ${width} ${field === 'warrantyCode' || field === 'patientName' ? 'font-bold' : ''}`}
+                    className={`overflow-hidden truncate whitespace-nowrap px-2 py-2.5 ${field === 'warrantyCode' || field === 'patientName' ? 'font-bold' : ''}`}
                   >
                     {sort ? (
                       <button type="button" onClick={() => toggleSort(sort)} className="flex items-center gap-1 rounded uppercase focus-visible:outline-2 focus-visible:outline-teal-500">
@@ -765,8 +773,8 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
                       />
                     </td>
                     {orderColumns.map(({ field, label }) => (
-                      <td key={field} className={`max-w-48 px-1 py-1 text-slate-700 dark:text-slate-200 ${fillRange?.field === field && currentOrders.findIndex((item) => item.id === order.id) >= Math.min(fillRange.start, fillRange.end) && currentOrders.findIndex((item) => item.id === order.id) <= Math.max(fillRange.start, fillRange.end) ? 'bg-teal-100/70 dark:bg-teal-900/30' : ''}`}>
-                        <div className="group/fill relative">
+                      <td key={field} className={`min-w-0 overflow-hidden px-1 py-1 text-slate-700 dark:text-slate-200 ${fillRange?.field === field && currentOrders.findIndex((item) => item.id === order.id) >= Math.min(fillRange.start, fillRange.end) && currentOrders.findIndex((item) => item.id === order.id) <= Math.max(fillRange.start, fillRange.end) ? 'bg-teal-100/70 dark:bg-teal-900/30' : ''}`}>
+                        <div className="group/fill relative min-w-0 max-w-full">
                           {renderCellEditor(order, field, label)}
                           {!readOnly && !(editingCell?.id === order.id && editingCell.field === field) && <button type="button" aria-label={`Kéo để sao chép ${label}`} title="Kéo để sao chép xuống" onPointerDown={(event) => startFill(event, order, field)} className="pointer-events-none absolute bottom-0 right-0 z-10 size-3 cursor-crosshair touch-none rounded-sm border border-white bg-teal-600 opacity-0 shadow-sm group-hover/fill:pointer-events-auto group-hover/fill:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100" />}
                         </div>

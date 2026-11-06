@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
-import { History as HistoryIcon, Loader2, RefreshCw, Search } from 'lucide-react';
+import { History as HistoryIcon, Loader2, RefreshCw, RotateCcw, Search, X } from 'lucide-react';
 import {
   CHANGE_HISTORY_PAGE_SIZE,
   fetchChangeHistoryPage,
   type ChangeHistoryEntry,
 } from '../services/changeHistory';
+import {
+  describeUndoAvailability,
+  undoChangeHistoryEntry,
+} from '../services/changeHistoryUndo';
 import { ENTITY_LABELS, actionLabelVi, type ChangeAction } from '../utils/changeDiff';
 
 interface ChangeHistoryViewProps {
@@ -51,6 +55,10 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
   const [entityType, setEntityType] = useState('');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmEntry, setConfirmEntry] = useState<ChangeHistoryEntry | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoMessage, setUndoMessage] = useState('');
+  const [undoError, setUndoError] = useState('');
 
   const load = useCallback(
     async (mode: 'reset' | 'more', pageCursor: QueryDocumentSnapshot | null = null) => {
@@ -241,6 +249,32 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
                           </table>
                         </div>
                       )}
+                      {(() => {
+                        const availability = describeUndoAvailability(entry);
+                        return (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {availability.canUndo ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setUndoError('');
+                                  setUndoMessage('');
+                                  setConfirmEntry(entry);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 cursor-pointer hover:bg-amber-500/15"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Hoàn tác
+                              </button>
+                            ) : (
+                              <p className="text-[11px] text-slate-400 italic max-w-xl">
+                                {availability.reason}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </li>
@@ -262,6 +296,103 @@ export const ChangeHistoryView: React.FC<ChangeHistoryViewProps> = ({ ownerId })
           </div>
         )}
       </div>
+
+      {(undoMessage || undoError) && (
+        <p
+          role={undoError ? 'alert' : 'status'}
+          className={`text-xs font-medium px-1 ${
+            undoError ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
+          }`}
+        >
+          {undoError || undoMessage}
+        </p>
+      )}
+
+      {confirmEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Xác nhận hoàn tác</h3>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  Thao tác này sẽ đảo ngược thay đổi trên bản ghi nghiệp vụ nếu dữ liệu hiện tại vẫn khớp trạng thái sau khi sửa.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={undoBusy}
+                onClick={() => setConfirmEntry(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                aria-label="Đóng"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-[11px] dark:border-slate-800 dark:bg-slate-950">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                {actionLabelVi(confirmEntry.action)} · {ENTITY_LABELS[confirmEntry.entityType] || confirmEntry.entityType}
+              </p>
+              <p className="mt-0.5 text-slate-600 dark:text-slate-300">{confirmEntry.entityLabel}</p>
+              <p className="mt-0.5 font-mono text-slate-400">id {confirmEntry.entityId}</p>
+              {confirmEntry.changes.length > 0 && (
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {confirmEntry.changes.map((change) => (
+                    <li key={`${confirmEntry.id}-confirm-${change.field}`} className="font-mono">
+                      <span className="text-slate-500">{change.field}</span>:{' '}
+                      <span className="text-rose-600 dark:text-rose-300">{change.before ?? '—'}</span>
+                      {' → '}
+                      <span className="text-emerald-600 dark:text-emerald-300">{change.after ?? '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={undoBusy}
+                onClick={() => setConfirmEntry(null)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={undoBusy}
+                onClick={() => {
+                  void (async () => {
+                    if (!confirmEntry) return;
+                    setUndoBusy(true);
+                    setUndoError('');
+                    setUndoMessage('');
+                    try {
+                      const result = await undoChangeHistoryEntry({
+                        ownerId,
+                        entry: confirmEntry,
+                      });
+                      setUndoMessage(result.message);
+                      setConfirmEntry(null);
+                      await load('reset', null);
+                    } catch (error) {
+                      setUndoError(
+                        error instanceof Error
+                          ? error.message
+                          : 'Không hoàn tác được. Vui lòng thử lại.'
+                      );
+                    } finally {
+                      setUndoBusy(false);
+                    }
+                  })();
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 text-white hover:bg-amber-500 cursor-pointer disabled:opacity-60"
+              >
+                {undoBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                Xác nhận hoàn tác
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

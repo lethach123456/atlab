@@ -592,16 +592,21 @@ service cloud.firestore {
         (list.size() < 40 || validHistoryChangeItem(list[39]));
     }
 
+    function optionalHistorySnapshot(data, key) {
+      return !(key in data) || data[key] is map;
+    }
+
     function isValidChangeHistory(data, documentId) {
       return data.keys().hasAll([
           'id', 'ownerId', 'actorUid', 'actorEmail', 'actorName',
           'action', 'entityType', 'entityId', 'entityLabel', 'summary',
-          'changes', 'createdAt'
+          'changes', 'canUndo', 'undoBlockReason', 'createdAt'
         ]) &&
         data.keys().hasOnly([
           'id', 'ownerId', 'actorUid', 'actorEmail', 'actorName',
           'action', 'entityType', 'entityId', 'entityLabel', 'summary',
-          'changes', 'createdAt'
+          'changes', 'canUndo', 'undoBlockReason', 'beforeSnapshot', 'afterSnapshot',
+          'undoOf', 'createdAt'
         ]) &&
         data.id == documentId && isValidId(documentId) &&
         data.ownerId is string && isValidId(data.ownerId) &&
@@ -614,16 +619,26 @@ service cloud.firestore {
         data.entityId is string && data.entityId.size() >= 1 && data.entityId.size() <= 128 &&
         data.entityLabel is string && data.entityLabel.size() <= 300 &&
         data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 400 &&
+        data.canUndo is bool &&
+        data.undoBlockReason is string && data.undoBlockReason.size() <= 300 &&
+        optionalHistorySnapshot(data, 'beforeSnapshot') &&
+        optionalHistorySnapshot(data, 'afterSnapshot') &&
+        (!('undoOf' in data) || (data.undoOf is string && data.undoOf.size() >= 1 && data.undoOf.size() <= 128)) &&
         validHistoryChangesList(data.changes) &&
         data.createdAt is timestamp && data.createdAt == request.time;
     }
 
     // Append-only audit trail. Editors may create (same batch as business writes).
+    // History rows that undo another row (undoOf) are admin-only.
     // Only workspace admins may read. No update/delete.
     match /changeHistory/{historyId} {
       allow get: if isAdmin() && (resource == null || isOwner(resource.data.ownerId));
       allow list: if isAdmin() && isOwner(resource.data.ownerId);
-      allow create: if isEditor(incoming().ownerId) && isValidChangeHistory(incoming(), historyId);
+      allow create: if isValidChangeHistory(incoming(), historyId) &&
+        (
+          (!('undoOf' in incoming()) && isEditor(incoming().ownerId)) ||
+          (('undoOf' in incoming()) && isAdmin() && isOwner(incoming().ownerId))
+        );
       allow update, delete: if false;
     }
 
