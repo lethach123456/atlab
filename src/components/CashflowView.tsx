@@ -9,7 +9,7 @@ import {
   Wallet,
   Plus,
   Trash2,
-  Pencil,
+  Edit,
   X,
   Search,
 } from 'lucide-react';
@@ -380,7 +380,13 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 {filteredTransactions.map((tx) => (
                   <tr
                     key={tx.id}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                    onClick={() => {
+                      if (!readOnly) handleOpenEdit(tx);
+                    }}
+                    title={!readOnly ? 'Sửa phiếu' : undefined}
+                    className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
+                      !readOnly ? 'cursor-pointer' : ''
+                    }`}
                   >
                     <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">
                       {tx.date || '—'}
@@ -434,16 +440,22 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                         <div className="inline-flex items-center gap-0.5">
                           <button
                             type="button"
-                            onClick={() => handleOpenEdit(tx)}
-                            className="p-1 text-slate-400 hover:text-teal-600 rounded cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEdit(tx);
+                            }}
+                            className="p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer"
                             title="Sửa"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Edit className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
-                            onClick={() => onDeleteTransaction(tx.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteTransaction(tx.id);
+                            }}
+                            className="p-1 text-rose-500 hover:bg-rose-500/10 rounded cursor-pointer"
                             title="Xóa"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
