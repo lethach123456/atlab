@@ -282,11 +282,18 @@ export function redactedFieldsChanged(
 /** Whether an undoable update may leave secrets untouched (for UI copy). */
 export function isPartialSecretPreservingUpdate(entry: {
   action: ChangeAction;
+  entityType?: string;
   canUndo?: boolean;
   beforeSnapshot?: UndoSnapshot | null;
   afterSnapshot?: UndoSnapshot | null;
+  changes?: { before?: string | null; after?: string | null }[];
 }): boolean {
-  return entry.action === 'update' && entry.canUndo === true;
+  if (entry.action !== 'update' || entry.canUndo !== true) return false;
+  // Settings profiles always omit bank/secret keys from undo snapshots.
+  if (entry.entityType === 'settings') return true;
+  // Display diffs that already show redacted markers.
+  if (entry.changes?.some((c) => c.before === '•••' || c.after === '•••')) return true;
+  return false;
 }
 
 /** Fields that must still equal the original "after" snapshot before undoing an update. */

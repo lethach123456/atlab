@@ -137,7 +137,11 @@ export async function saveCommissions(
       });
     }
   } catch {
-    throw new Error('Chưa lưu đủ các nha khoa. Bấm lưu lại để hoàn tất các mục còn thiếu.');
+    throw new Error(
+      created > 0
+        ? `Đã lưu ${created}/${records.length} nha khoa; phần còn lại chưa xong. Bấm lưu lại để hoàn tất (bỏ qua mục đã có).`
+        : 'Chưa lưu đủ các nha khoa. Bấm lưu lại để hoàn tất các mục còn thiếu.'
+    );
   }
   return { created, skipped: records.length - created };
 }

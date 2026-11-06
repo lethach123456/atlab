@@ -44,3 +44,13 @@ test('paired chunk stays under Firestore transaction get (500) and write (500) b
   assert.ok(entityOps + historyOps <= 500);
   assert.ok(preReads + entityOps + historyOps <= 500 + 500); // reads and writes are separate budgets
 });
+
+test('chunk boundaries 0,1,199,200,201,399,400,401', () => {
+  for (const n of [0, 1, 199, 200, 201, 399, 400, 401]) {
+    const items = Array.from({ length: n }, (_, i) => `id_${i}`);
+    const chunks = chunkForPairedHistoryWrites(items);
+    assert.deepEqual(chunks.flat(), items);
+    assert.equal(chunks.length, n === 0 ? 0 : Math.ceil(n / CHANGE_HISTORY_PAIRED_CHUNK));
+    for (const chunk of chunks) assert.ok(chunk.length * 2 <= 500);
+  }
+});
