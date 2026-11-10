@@ -68,3 +68,39 @@ test('Hoàn thiện labels are stripped like đắp mài; Zaroc still wins', () 
   const zaroc = buildWarrantyResult('UC123', [{...base, material: 'Hoàn thiện Zaroc', teeth: '11'}]);
   assert.equal(zaroc.restorations[0].material, 'Phôi đơn lớp Zaroc');
 });
+
+test('materials containing razor or unc as whole tokens return exactly Phôi đơn lớp Zaroc', () => {
+  const cases = [
+    'UNC',
+    'unc',
+    'Full UNC',
+    'UNC hoàn thiện',
+    'zirco Razor',
+    'Full zirco razor',
+    'Sườn zirco Razor',
+    'RAZOR',
+    'Sườn implant UNC',
+    'Đắp mài Razor',
+    'Hoàn thiện UNC',
+  ];
+  for (const material of cases) {
+    const result = buildWarrantyResult('UC123', [{...base, material, teeth: '11'}]);
+    assert.equal(result.restorations[0].material, 'Phôi đơn lớp Zaroc', material);
+  }
+});
+
+test('unrelated words that only contain razor or unc letters stay as stored', () => {
+  const cases = [
+    ['Zirconia', 'Zirconia'],
+    ['Full Zirconia', 'Full Zirconia'],
+    ['function', 'function'],
+    ['uncommon', 'uncommon'],
+    ['truncated', 'truncated'],
+    ['razorback', 'razorback'],
+    ['Cercon HT', 'Cercon HT'],
+  ];
+  for (const [material, expected] of cases) {
+    const result = buildWarrantyResult('UC123', [{...base, material, teeth: '11'}]);
+    assert.equal(result.restorations[0].material, expected, material);
+  }
+});
