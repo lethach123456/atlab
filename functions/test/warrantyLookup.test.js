@@ -61,3 +61,10 @@ test('non-zaroc materials still strip đắp mài and otherwise stay as stored',
     'Full Zirconia'
   );
 });
+
+test('Hoàn thiện labels are stripped like đắp mài; Zaroc still wins', () => {
+  const stripped = buildWarrantyResult('UC123', [{...base, material: 'Hoàn thiện Zirconia', teeth: '11'}]);
+  assert.equal(stripped.restorations[0].material, 'Zirconia');
+  const zaroc = buildWarrantyResult('UC123', [{...base, material: 'Hoàn thiện Zaroc', teeth: '11'}]);
+  assert.equal(zaroc.restorations[0].material, 'Phôi đơn lớp Zaroc');
+});

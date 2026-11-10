@@ -1,4 +1,4 @@
-const DAP_MAI_LABEL = /đắp\s*mài/i;
+const VARIANT_LABEL = /đắp\s*mài|hoàn\s*thiện/i;
 const ZAROC_DISPLAY_NAME = 'Phôi đơn lớp Zaroc';
 
 /** Fold for comparison: lowercase, strip accents, drop whitespace. */
@@ -15,10 +15,10 @@ export function displayMaterialName(material) {
   const raw = String(material ?? '').trim();
   if (!raw) return '';
   if (foldForMatch(raw).includes('zaroc')) return ZAROC_DISPLAY_NAME;
-  if (!DAP_MAI_LABEL.test(raw)) return raw;
+  if (!VARIANT_LABEL.test(raw)) return raw;
   return raw
-    .replace(/[(\[]\s*đắp\s*mài\s*[)\]]/gi, ' ')
-    .replace(/đắp\s*mài/gi, ' ')
+    .replace(/[(\[]\s*(?:đắp\s*mài|hoàn\s*thiện)\s*[)\]]/gi, ' ')
+    .replace(/(?:đắp\s*mài|hoàn\s*thiện)/gi, ' ')
     .replace(/[-–—:·|,;]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

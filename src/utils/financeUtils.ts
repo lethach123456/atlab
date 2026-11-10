@@ -23,10 +23,11 @@ export const DEFAULT_LAB_PROFILE: LabProfileConfig = {
 };
 
 /**
- * Danh mục Dòng Sứ theo bảng giá Lab (Sườn / Full / Veneer / Đắp mài / Sườn implant / Full implant).
- * Cột Đắp mài lưu đúng tên họ sứ (vd. "Zirconia"), không gắn tiền tố form.
+ * Danh mục Dòng Sứ theo bảng giá Lab (Sườn / Full / Veneer / Hoàn thiện / Sườn implant / Full implant).
+ * Cột Hoàn thiện lưu đúng tên họ sứ (vd. "Zirconia"), không gắn tiền tố form.
  * Giá trên sheet ghi theo nghìn đồng → unitPrice lưu VNĐ (× 1000).
- * Đắp mài không có giá mặc định trên sheet (unitPrice 0 / chưa nhập).
+ * Hoàn thiện không có giá mặc định trên sheet (unitPrice 0 / chưa nhập).
+ * Nhãn cũ "Đắp mài" vẫn được nhận khi đọc; ghi mới dùng "Hoàn thiện".
  */
 export const MATERIAL_PRICES_SEED_VERSION = '2026-11-06-sheet-v2';
 
@@ -35,13 +36,21 @@ export const MATERIAL_SHEET_FORM_LABELS = [
   'Sườn',
   'Full',
   'Veneer',
-  'Đắp mài',
+  'Hoàn thiện',
   'Sườn implant',
   'Full implant',
 ] as const;
 
-/** Form whose catalog/order name is the bare family (no "Đắp mài " prefix). */
-export const DAP_MAI_SHEET_FORM = 'Đắp mài' as const;
+/** Canonical form whose catalog/order name is the bare family (no column-label prefix). */
+export const DAP_MAI_SHEET_FORM = 'Hoàn thiện' as const;
+
+/** Previous column label; still accepted on read. */
+export const DAP_MAI_SHEET_FORM_LEGACY = 'Đắp mài' as const;
+
+export function isBareFamilySheetForm(form: string): boolean {
+  const key = form.trim().toLowerCase();
+  return key === DAP_MAI_SHEET_FORM.toLowerCase() || key === DAP_MAI_SHEET_FORM_LEGACY.toLowerCase();
+}
 
 export type MaterialSheetFormLabel = (typeof MATERIAL_SHEET_FORM_LABELS)[number];
 
@@ -63,7 +72,7 @@ const MATERIAL_SHEET_FORMS: SheetForm[] = [
   { form: 'Sườn', category: 'Sườn Sứ Zirconia' },
   { form: 'Full', category: 'Zirconia Nguyên Khối (Full)' },
   { form: 'Veneer', category: 'Mặt Dán Sứ Veneer' },
-  { form: 'Đắp mài', category: 'Đắp Mài' },
+  { form: 'Hoàn thiện', category: 'Hoàn thiện' },
   { form: 'Sườn implant', category: 'Phục Hình Trên Implant' },
   { form: 'Full implant', category: 'Phục Hình Trên Implant' },
 ];
@@ -76,9 +85,12 @@ export function categoryForSheetForm(form: MaterialSheetFormLabel): string {
   return SHEET_FORM_CATEGORY[form];
 }
 
-export function materialSheetItemName(form: MaterialSheetFormLabel, brand: string): string {
+export function materialSheetItemName(
+  form: MaterialSheetFormLabel | typeof DAP_MAI_SHEET_FORM_LEGACY,
+  brand: string
+): string {
   const trimmed = brand.trim();
-  if (form === DAP_MAI_SHEET_FORM) return trimmed;
+  if (isBareFamilySheetForm(form)) return trimmed;
   return `${form} ${trimmed}`.trim();
 }
 
@@ -361,7 +373,7 @@ export function seedMaterialPricesFromDefaults(
 
 function isLegacySheetSupersededMaterial(value: string): boolean {
   const v = value.toLowerCase().trim();
-  // Bare family names (Zirconia, Cercon HT, …) are the Đắp mài catalog rows — never drop them.
+  // Bare family names (Zirconia, Cercon HT, …) are the Hoàn thiện catalog rows — never drop them.
   if (MATERIAL_SHEET_BRANDS.some((row) => sheetBrandKey(row.brand) === v)) return false;
   const markers = [
     'zirconia',

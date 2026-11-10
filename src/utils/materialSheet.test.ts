@@ -31,26 +31,27 @@ function price(
   };
 }
 
-describe('đắp mài sheet naming', () => {
+describe('hoàn thiện / đắp mài sheet naming', () => {
   it('keeps the seed version so live catalogs are not auto-overwritten', () => {
     assert.equal(MATERIAL_PRICES_SEED_VERSION, '2026-11-06-sheet-v2');
   });
 
-  it('places Đắp mài after Veneer and before implant forms', () => {
+  it('places Hoàn thiện after Veneer and before implant forms', () => {
     assert.deepEqual(MATERIAL_SHEET_FORM_LABELS, [
       'Sườn',
       'Full',
       'Veneer',
-      'Đắp mài',
+      'Hoàn thiện',
       'Sườn implant',
       'Full implant',
     ]);
-    assert.equal(DAP_MAI_SHEET_FORM, 'Đắp mài');
+    assert.equal(DAP_MAI_SHEET_FORM, 'Hoàn thiện');
   });
 
-  it('uses the bare family name for Đắp mài and prefixed names for other forms', () => {
+  it('uses the bare family name for Hoàn thiện (and legacy Đắp mài) and prefixed names for other forms', () => {
+    assert.equal(materialSheetItemName('Hoàn thiện', 'Zirconia'), 'Zirconia');
+    assert.equal(materialSheetItemName('Hoàn thiện', 'Cercon HT'), 'Cercon HT');
     assert.equal(materialSheetItemName('Đắp mài', 'Zirconia'), 'Zirconia');
-    assert.equal(materialSheetItemName('Đắp mài', 'Cercon HT'), 'Cercon HT');
     assert.equal(materialSheetItemName('Full', 'Zirconia'), 'Full Zirconia');
     assert.equal(materialSheetItemName('Sườn', 'Zirconia'), 'Sườn Zirconia');
     assert.equal(materialSheetItemName('Veneer', 'Zirconia'), 'Veneer Zirconia');
@@ -65,26 +66,27 @@ describe('đắp mài sheet naming', () => {
     assert.equal(parseMaterialSheetName('Zirconia'), null);
     assert.equal(parseMaterialSheetName('Cercon HT'), null);
     assert.equal(parseMaterialSheetName('Đắp mài Zirconia'), null);
+    assert.equal(parseMaterialSheetName('Hoàn thiện Zirconia'), null);
   });
 });
 
-describe('groupMaterialPricesForSheet — Đắp mài column', () => {
-  it('maps an existing exact family-name row into Đắp mài without duplicating it', () => {
+describe('groupMaterialPricesForSheet — Hoàn thiện column', () => {
+  it('maps an existing exact family-name row into Hoàn thiện without duplicating it', () => {
     const zirconia = price('Zirconia', 250000, 'mat_zirconia_live');
     const full = price('Full Zirconia', 390000);
     const view = groupMaterialPricesForSheet([full, zirconia]);
     assert.equal(view.brandRows.length, 1);
     assert.equal(view.brandRows[0].brand, 'Zirconia');
     assert.equal(view.brandRows[0].byForm.Full?.id, full.id);
-    assert.equal(view.brandRows[0].byForm['Đắp mài']?.id, 'mat_zirconia_live');
-    assert.equal(view.brandRows[0].byForm['Đắp mài']?.unitPrice, 250000);
-    assert.equal(view.brandRows[0].byForm['Đắp mài']?.name, 'Zirconia');
+    assert.equal(view.brandRows[0].byForm[DAP_MAI_SHEET_FORM]?.id, 'mat_zirconia_live');
+    assert.equal(view.brandRows[0].byForm[DAP_MAI_SHEET_FORM]?.unitPrice, 250000);
+    assert.equal(view.brandRows[0].byForm[DAP_MAI_SHEET_FORM]?.name, 'Zirconia');
     assert.deepEqual(view.extras, []);
   });
 
-  it('leaves the Đắp mài cell empty when the family has no bare-name row', () => {
+  it('leaves the Hoàn thiện cell empty when the family has no bare-name row', () => {
     const view = groupMaterialPricesForSheet([price('Full Zirconia', 390000), price('Sườn Zirconia', 390000)]);
-    assert.equal(view.brandRows[0].byForm['Đắp mài'], undefined);
+    assert.equal(view.brandRows[0].byForm[DAP_MAI_SHEET_FORM], undefined);
     assert.deepEqual(view.extras, []);
   });
 
@@ -92,7 +94,7 @@ describe('groupMaterialPricesForSheet — Đắp mài column', () => {
     const view = groupMaterialPricesForSheet([price('Cercon HT', 410000, 'mat_cercon_ht')]);
     assert.equal(view.brandRows.length, 1);
     assert.equal(view.brandRows[0].brand, 'Cercon HT');
-    assert.equal(view.brandRows[0].byForm['Đắp mài']?.id, 'mat_cercon_ht');
+    assert.equal(view.brandRows[0].byForm[DAP_MAI_SHEET_FORM]?.id, 'mat_cercon_ht');
     assert.deepEqual(view.extras, []);
   });
 
@@ -101,7 +103,7 @@ describe('groupMaterialPricesForSheet — Đắp mài column', () => {
     const second = price('Zirconia', 999000, 'mat_zirconia_dup');
     const mystery = price('Vật liệu lạ', 10000);
     const view = groupMaterialPricesForSheet([price('Full Zirconia', 390000), first, second, mystery]);
-    assert.equal(view.brandRows[0].byForm['Đắp mài']?.id, 'mat_zirconia');
+    assert.equal(view.brandRows[0].byForm[DAP_MAI_SHEET_FORM]?.id, 'mat_zirconia');
     assert.equal(view.extras.length, 2);
     assert.deepEqual(
       view.extras.map((row) => row.id).sort(),
@@ -109,7 +111,7 @@ describe('groupMaterialPricesForSheet — Đắp mài column', () => {
     );
   });
 
-  it('does not treat Cùi giả as a Đắp mài family', () => {
+  it('does not treat Cùi giả as a Hoàn thiện family', () => {
     const view = groupMaterialPricesForSheet([price('Cùi giả', 50000)]);
     assert.equal(view.brandRows.length, 0);
     assert.equal(view.extras[0]?.name, 'Cùi giả');
@@ -124,9 +126,9 @@ describe('DEFAULT_MATERIAL_PRICES and seed safety', () => {
     assert.ok(cercon);
     assert.equal(zirconia?.unitPrice, 0);
     assert.equal(cercon?.unitPrice, 0);
-    assert.equal(zirconia?.category, 'Đắp Mài');
+    assert.equal(zirconia?.category, 'Hoàn thiện');
     assert.equal(
-      DEFAULT_MATERIAL_PRICES.some((row) => row.name.startsWith('Đắp mài ')),
+      DEFAULT_MATERIAL_PRICES.some((row) => row.name.startsWith('Đắp mài ') || row.name.startsWith('Hoàn thiện ')),
       false
     );
     assert.equal(getUnitPriceForMaterial('Full Zirconia', DEFAULT_MATERIAL_PRICES), 390000);

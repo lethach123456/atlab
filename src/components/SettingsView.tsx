@@ -612,8 +612,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </h2>
                     <p className="text-[11px] text-slate-500">
                       {priceScope === 'shared'
-                        ? 'Bảng mặc định cho mọi nha khoa chưa có bảng riêng. Đơn mới lấy giá theo nha khoa → bảng riêng nếu có, không thì bảng này. Cột Đắp mài dùng đúng tên họ sứ (Zirconia, Cercon HT, …).'
-                        : 'Chọn nha khoa để tạo / chỉnh bảng giá riêng. Ô chưa có giá riêng (chữ mờ) đang lấy giá bảng chung; điền số để đặt giá riêng. Cột Đắp mài dùng đúng tên họ sứ.'}
+                        ? 'Bảng mặc định cho mọi nha khoa chưa có bảng riêng. Đơn mới lấy giá theo nha khoa → bảng riêng nếu có, không thì bảng này. Cột Hoàn thiện dùng đúng tên họ sứ (Zirconia, Cercon HT, …).'
+                        : 'Chọn nha khoa để tạo / chỉnh bảng giá riêng. Ô chưa có giá riêng (chữ mờ) đang lấy giá bảng chung; điền số để đặt giá riêng. Cột Hoàn thiện dùng đúng tên họ sứ.'}
                     </p>
                   </div>
                 </div>
@@ -781,7 +781,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   Thêm dòng sứ mới
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Tạo 1 hàng trên bảng với 6 cột giá (mặc định 0). Điền giá trực tiếp trên bảng sau khi thêm. Cột Đắp mài dùng đúng tên họ sứ (vd. Zirconia), không gắn hậu tố.
+                  Tạo 1 hàng trên bảng với 6 cột giá (mặc định 0). Điền giá trực tiếp trên bảng sau khi thêm. Cột Hoàn thiện dùng đúng tên họ sứ (vd. Zirconia), không gắn hậu tố.
                 </p>
                 {materialError && (
                   <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
@@ -864,7 +864,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {sheetView.brandRows.find((item) => item.brandKey === deleteBrandKey)?.brand || ''}?
                 </p>
                 <p className="text-xs text-slate-600 dark:text-slate-300">
-                  Sẽ gỡ cả 6 loại giá (Sườn / Full / Veneer / Đắp mài / Sườn implant / Full implant) khỏi danh mục. Đơn đã tạo vẫn giữ tên vật liệu cũ.
+                  Sẽ gỡ cả 6 loại giá (Sườn / Full / Veneer / Hoàn thiện / Sườn implant / Full implant) khỏi danh mục. Đơn đã tạo vẫn giữ tên vật liệu cũ.
                 </p>
                 <div className="flex gap-2 text-xs font-bold">
                   <button
