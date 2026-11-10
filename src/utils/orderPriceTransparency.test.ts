@@ -65,10 +65,10 @@ test('clinic source only for materials present in that clinic table', () => {
     resolvePriceSourceForMaterial('Nha khoa Lăng Cô', 'Full Zirconia', shared, rows),
     'clinic'
   );
-  // Full UNC is not in the clinic table → resolve does not fall back → unavailable
+  // Full UNC is absent from the clinic table → shared fallback
   assert.equal(
     resolvePriceSourceForMaterial('Nha khoa Lăng Cô', 'Full UNC', shared, rows),
-    'unavailable'
+    'shared'
   );
   const expl = explainOrderAmountSuggestion({
     clinicName: 'Nha khoa Lăng Cô',
@@ -168,4 +168,179 @@ test('compactHint appends · tay when session manual differs', () => {
     sessionManual: true,
   });
   assert.equal(expl.compactHint, 'Đề xuất 390.000 × 1 · tay');
+});
+
+test('selecting the bare family name (Đắp mài) autofills unit × qty with the usual hint', () => {
+  const catalog: MaterialPriceConfig[] = [
+    ...shared,
+    {
+      id: 'mat_zirconia',
+      materialKey: 'zirconia',
+      name: 'Zirconia',
+      category: 'Đắp Mài',
+      origin: 'Đức',
+      unitPrice: 250000,
+      retailSuggestedPrice: 1400000,
+      defaultWarranty: '15 năm',
+      strengthMpa: 1150,
+    },
+  ];
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Zirconia',
+    quantity: 3,
+    enteredAmount: 750000,
+    sharedPrices: catalog,
+    clinicRows: [],
+  });
+  assert.equal(expl.source, 'shared');
+  assert.equal(expl.unitPrice, 250000);
+  assert.equal(expl.suggestedTotal, 750000);
+  assert.equal(expl.hasSuggestion, true);
+  assert.equal(expl.compactHint, 'Đề xuất 250.000 × 3');
+});
+
+test('bare family name with no price stays Chưa có đơn giá', () => {
+  const catalog: MaterialPriceConfig[] = [
+    ...shared,
+    {
+      id: 'mat_zirconia',
+      materialKey: 'zirconia',
+      name: 'Zirconia',
+      category: 'Đắp Mài',
+      origin: 'Đức',
+      unitPrice: 0,
+      retailSuggestedPrice: 0,
+      defaultWarranty: '15 năm',
+      strengthMpa: 1150,
+    },
+  ];
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Zirconia',
+    quantity: 2,
+    enteredAmount: 0,
+    sharedPrices: catalog,
+    clinicRows: [],
+  });
+  assert.equal(expl.source, 'unavailable');
+  assert.equal(expl.hasSuggestion, false);
+  assert.match(expl.calculationText, /Chưa có đơn giá/i);
+});
+
+test('absent clinic Đắp mài row falls back to shared price and source', () => {
+  const catalog: MaterialPriceConfig[] = [
+    ...shared,
+    {
+      id: 'mat_zirconia',
+      materialKey: 'zirconia',
+      name: 'Zirconia',
+      category: 'Đắp Mài',
+      origin: 'Đức',
+      unitPrice: 250000,
+      retailSuggestedPrice: 1400000,
+      defaultWarranty: '15 năm',
+      strengthMpa: 1150,
+    },
+  ];
+  const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [
+    { ...catalog[0], unitPrice: 350000 },
+  ]);
+  assert.equal(
+    resolvePriceSourceForMaterial('Nha khoa Lăng Cô', 'Zirconia', catalog, rows),
+    'shared'
+  );
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Zirconia',
+    quantity: 2,
+    enteredAmount: 500000,
+    sharedPrices: catalog,
+    clinicRows: rows,
+  });
+  assert.equal(expl.source, 'shared');
+  assert.equal(expl.sourceLabel, 'Giá chung');
+  assert.equal(expl.unitPrice, 250000);
+  assert.equal(expl.suggestedTotal, 500000);
+  assert.equal(expl.hasSuggestion, true);
+  assert.equal(expl.compactHint, 'Đề xuất 250.000 × 2');
+});
+
+test('explicit clinic Đắp mài price wins over shared', () => {
+  const catalog: MaterialPriceConfig[] = [
+    ...shared,
+    {
+      id: 'mat_zirconia',
+      materialKey: 'zirconia',
+      name: 'Zirconia',
+      category: 'Đắp Mài',
+      origin: 'Đức',
+      unitPrice: 250000,
+      retailSuggestedPrice: 1400000,
+      defaultWarranty: '15 năm',
+      strengthMpa: 1150,
+    },
+  ];
+  const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [
+    { ...catalog[2], unitPrice: 180000 },
+  ]);
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Zirconia',
+    quantity: 3,
+    enteredAmount: 540000,
+    sharedPrices: catalog,
+    clinicRows: rows,
+  });
+  assert.equal(expl.source, 'clinic');
+  assert.equal(expl.sourceLabel, 'Giá riêng nha khoa');
+  assert.equal(expl.unitPrice, 180000);
+  assert.equal(expl.suggestedTotal, 540000);
+});
+
+test('explicit clinic price 0 does not fall back to shared', () => {
+  const catalog: MaterialPriceConfig[] = [
+    ...shared,
+    {
+      id: 'mat_zirconia',
+      materialKey: 'zirconia',
+      name: 'Zirconia',
+      category: 'Đắp Mài',
+      origin: 'Đức',
+      unitPrice: 250000,
+      retailSuggestedPrice: 1400000,
+      defaultWarranty: '15 năm',
+      strengthMpa: 1150,
+    },
+  ];
+  const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [
+    { ...catalog[2], unitPrice: 0, retailSuggestedPrice: 0 },
+  ]);
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Zirconia',
+    quantity: 2,
+    enteredAmount: 0,
+    sharedPrices: catalog,
+    clinicRows: rows,
+  });
+  assert.equal(expl.source, 'unavailable');
+  assert.equal(expl.hasSuggestion, false);
+  assert.equal(expl.unitPrice, 0);
+  assert.match(expl.calculationText, /Chưa có đơn giá/i);
+});
+
+test('absent clinic row and missing shared price stays Chưa có đơn giá', () => {
+  const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [shared[0]]);
+  const expl = explainOrderAmountSuggestion({
+    clinicName: 'Nha khoa Lăng Cô',
+    material: 'Zirconia',
+    quantity: 2,
+    enteredAmount: 0,
+    sharedPrices: shared,
+    clinicRows: rows,
+  });
+  assert.equal(expl.source, 'unavailable');
+  assert.equal(expl.hasSuggestion, false);
+  assert.match(expl.calculationText, /Chưa có đơn giá/i);
 });

@@ -4,6 +4,7 @@ import { DeliveryRecord, DentalOrder } from '../types/dental';
 import { formatVND, extractMonthYear, sortMonthYearsDesc } from '../utils/financeUtils';
 import { DateCellEditor, DateTextInput } from './DateTextInput';
 import { normalizeDdMmYyyy } from '../utils/dateOnly';
+import { sortDeliveriesByRecentlyAdded } from '../utils/deliveryRecency';
 import {
   Truck,
   Plus,
@@ -108,7 +109,7 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
 
   const filteredDeliveries = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return deliveries.filter((d) => {
+    const filtered = deliveries.filter((d) => {
       if (selectedMonth !== 'ALL' && d.monthYear !== selectedMonth) return false;
       if (selectedClinic && d.clinicName !== selectedClinic) return false;
       if (selectedCourier && d.courierName !== selectedCourier) return false;
@@ -122,6 +123,8 @@ export const DeliveryManagementView: React.FC<DeliveryManagementViewProps> = ({
       }
       return true;
     });
+    // Newest added first (createdAt); filters/search/totals unchanged. List is not row-grouped.
+    return sortDeliveriesByRecentlyAdded(filtered);
   }, [deliveries, selectedMonth, selectedClinic, selectedCourier, searchQuery]);
 
   const deliveryStats = useMemo(() => {

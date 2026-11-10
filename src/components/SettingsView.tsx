@@ -11,6 +11,7 @@ import {
   MaterialSheetFormLabel,
   categoryForSheetForm,
   groupMaterialPricesForSheet,
+  MaterialSheetBrandRow,
   materialSheetItemName,
   suggestedRetailFromUnitPrice,
   clinicHasCustomMaterialPrices,
@@ -209,6 +210,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     !!selectedClinicName &&
     clinicHasCustomMaterialPrices(selectedClinicName, clinicMaterialPrices);
 
+  const sharedSheetView = useMemo(
+    () => groupMaterialPricesForSheet(materialPrices),
+    [materialPrices]
+  );
+
+  const displayBrandRows = useMemo(() => {
+    if (!clinicCustomActive) return sheetView.brandRows;
+    const seen = new Set(sheetView.brandRows.map((row) => row.brandKey));
+    const inheritedOnly = sharedSheetView.brandRows
+      .filter((row) => !seen.has(row.brandKey))
+      .map((row) => ({
+        ...row,
+        byForm: {} as MaterialSheetBrandRow['byForm'],
+        configIds: [] as string[],
+      }));
+    return [...sheetView.brandRows, ...inheritedOnly];
+  }, [clinicCustomActive, sheetView, sharedSheetView]);
+
+  const displayExtras = useMemo(() => {
+    if (!clinicCustomActive) {
+      return sheetView.extras.map((item) => ({ item, inherited: false }));
+    }
+    const clinicHasExtra = (row: MaterialPriceConfig) =>
+      sheetView.extras.some(
+        (extra) =>
+          extra.id === row.id ||
+          extra.name.toLowerCase() === row.name.toLowerCase() ||
+          extra.materialKey.toLowerCase() === row.materialKey.toLowerCase()
+      );
+    return [
+      ...sheetView.extras.map((item) => ({ item, inherited: false })),
+      ...sharedSheetView.extras
+        .filter((row) => !clinicHasExtra(row))
+        .map((item) => ({ item, inherited: true })),
+    ];
+  }, [clinicCustomActive, sheetView, sharedSheetView]);
+
   const handleSavePrices = (applyToAllOrders: boolean) => {
     if (priceScope === 'clinic') {
       if (!selectedClinicName) {
@@ -273,9 +311,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (materialsReadOnly || !Number.isFinite(value) || value < 0) return;
     setLocalPrices((prev) => {
       const view = groupMaterialPricesForSheet(prev);
-      const row = view.brandRows.find((item) => item.brandKey === brandKey);
+      const clinicRow = view.brandRows.find((item) => item.brandKey === brandKey);
+      const sharedRow = groupMaterialPricesForSheet(materialPrices).brandRows.find(
+        (item) => item.brandKey === brandKey
+      );
+      const row = clinicRow || sharedRow;
       if (!row) return prev;
-      const existing = row.byForm[form];
+      const existing = clinicRow?.byForm[form];
       if (existing) {
         return prev.map((item) =>
           item.id === existing.id
@@ -388,7 +430,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       working = [...working, item];
       return item;
     });
-    commitPrices([...localPrices, ...created], 'Đã thêm dòng sứ mới (5 cột giá = 0).');
+    commitPrices([...localPrices, ...created], 'Đã thêm dòng sứ mới (6 cột giá = 0).');
     setMaterialFormOpen(false);
     setBrandDraft(emptyBrandDraft);
     setMaterialError('');
@@ -403,7 +445,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
     const idSet = new Set(row.configIds);
     const nextPrices = localPrices.filter((item) => !idSet.has(item.id));
-    commitPrices(nextPrices, `Đã xóa dòng sứ ${row.brand} (cả 5 loại giá).`);
+    commitPrices(nextPrices, `Đã xóa dòng sứ ${row.brand} (cả 6 loại giá).`);
     setDeleteBrandKey(null);
     setMaterialFormOpen(false);
   };
@@ -421,6 +463,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           : item
       )
     );
+  };
+
+  const handleInheritedExtraPrice = (sharedItem: MaterialPriceConfig, value: number) => {
+    if (materialsReadOnly || !Number.isFinite(value) || value < 0) return;
+    setLocalPrices((prev) => {
+      if (
+        prev.some(
+          (item) =>
+            item.id === sharedItem.id ||
+            item.name.toLowerCase() === sharedItem.name.toLowerCase() ||
+            item.materialKey.toLowerCase() === sharedItem.materialKey.toLowerCase()
+        )
+      ) {
+        return prev.map((item) =>
+          item.id === sharedItem.id ||
+          item.name.toLowerCase() === sharedItem.name.toLowerCase() ||
+          item.materialKey.toLowerCase() === sharedItem.materialKey.toLowerCase()
+            ? {
+                ...item,
+                unitPrice: value,
+                retailSuggestedPrice: suggestedRetailFromUnitPrice(value),
+              }
+            : item
+        );
+      }
+      const nextId = prev.some((item) => item.id === sharedItem.id)
+        ? makeMaterialId(sharedItem.name, prev)
+        : sharedItem.id;
+      return [
+        ...prev,
+        {
+          ...sharedItem,
+          id: nextId,
+          unitPrice: value,
+          retailSuggestedPrice: suggestedRetailFromUnitPrice(value),
+        },
+      ];
+    });
   };
 
   const handleDeleteExtra = () => {
@@ -532,8 +612,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </h2>
                     <p className="text-[11px] text-slate-500">
                       {priceScope === 'shared'
-                        ? 'Bảng mặc định cho mọi nha khoa chưa có bảng riêng. Đơn mới lấy giá theo nha khoa → bảng riêng nếu có, không thì bảng này.'
-                        : 'Chọn nha khoa để tạo / chỉnh bảng giá riêng. Đơn của nha khoa đó sẽ ưu tiên bảng này.'}
+                        ? 'Bảng mặc định cho mọi nha khoa chưa có bảng riêng. Đơn mới lấy giá theo nha khoa → bảng riêng nếu có, không thì bảng này. Cột Đắp mài dùng đúng tên họ sứ (Zirconia, Cercon HT, …).'
+                        : 'Chọn nha khoa để tạo / chỉnh bảng giá riêng. Ô chưa có giá riêng (chữ mờ) đang lấy giá bảng chung; điền số để đặt giá riêng. Cột Đắp mài dùng đúng tên họ sứ.'}
                     </p>
                   </div>
                 </div>
@@ -701,7 +781,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   Thêm dòng sứ mới
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Tạo 1 hàng trên bảng với 5 cột giá (mặc định 0). Điền giá trực tiếp trên bảng sau khi thêm.
+                  Tạo 1 hàng trên bảng với 6 cột giá (mặc định 0). Điền giá trực tiếp trên bảng sau khi thêm. Cột Đắp mài dùng đúng tên họ sứ (vd. Zirconia), không gắn hậu tố.
                 </p>
                 {materialError && (
                   <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
@@ -784,7 +864,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {sheetView.brandRows.find((item) => item.brandKey === deleteBrandKey)?.brand || ''}?
                 </p>
                 <p className="text-xs text-slate-600 dark:text-slate-300">
-                  Sẽ gỡ cả 5 loại giá (Sườn / Full / Veneer / Sườn implant / Full implant) khỏi danh mục. Đơn đã tạo vẫn giữ tên vật liệu cũ.
+                  Sẽ gỡ cả 6 loại giá (Sườn / Full / Veneer / Đắp mài / Sườn implant / Full implant) khỏi danh mục. Đơn đã tạo vẫn giữ tên vật liệu cũ.
                 </p>
                 <div className="flex gap-2 text-xs font-bold">
                   <button
@@ -842,7 +922,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs min-w-[900px]">
+              <table className="w-full text-left text-xs min-w-[1080px]">
                 <thead className="bg-slate-50 dark:bg-slate-950/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 uppercase text-[11px]">
                   <tr>
                     <th className="py-2.5 px-3 sticky left-0 bg-slate-50 dark:bg-slate-950/95 z-10">Dòng sứ</th>
@@ -856,14 +936,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                  {sheetView.brandRows.map((row) => (
+                  {displayBrandRows.map((row) => {
+                    const inheritedOnly =
+                      clinicCustomActive &&
+                      !sheetView.brandRows.some((item) => item.brandKey === row.brandKey);
+                    return (
                     <tr
                       key={row.brandKey}
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                     >
                       <td className="py-1.5 px-3 sticky left-0 bg-white dark:bg-slate-900 z-10">
-                        {materialsReadOnly ? (
-                          <span className="font-bold text-slate-900 dark:text-white">{row.brand}</span>
+                        {materialsReadOnly || inheritedOnly ? (
+                          <span className={`font-bold ${inheritedOnly ? 'text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-white'}`}>{row.brand}</span>
                         ) : (
                           <input
                             key={`${row.brandKey}-brand`}
@@ -875,8 +959,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         )}
                       </td>
                       <td className="py-1.5 px-3">
-                        {materialsReadOnly ? (
-                          <span className="text-slate-500">{row.origin}</span>
+                        {materialsReadOnly || inheritedOnly ? (
+                          <span className={inheritedOnly ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500'}>{row.origin}</span>
                         ) : (
                           <input
                             value={row.origin}
@@ -888,6 +972,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </td>
                       {MATERIAL_SHEET_FORM_LABELS.map((form) => {
                         const cell = row.byForm[form];
+                        const sharedCell = clinicCustomActive
+                          ? sharedSheetView.brandRows.find((item) => item.brandKey === row.brandKey)
+                              ?.byForm[form]
+                          : undefined;
+                        const inherited = !cell && !!sharedCell && sharedCell.unitPrice > 0;
+                        const displayValue =
+                          cell && cell.unitPrice > 0
+                            ? cell.unitPrice
+                            : inherited
+                              ? sharedCell!.unitPrice
+                              : '';
                         return (
                           <td key={form} className="py-1.5 px-2 text-right">
                             <input
@@ -895,21 +990,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               step={1000}
                               min={0}
                               disabled={materialsReadOnly}
-                              value={cell?.unitPrice ?? ''}
-                              placeholder="—"
+                              value={displayValue}
+                              placeholder="Chưa có đơn giá"
+                              title={
+                                inherited
+                                  ? 'Giá chung (chưa đặt giá riêng)'
+                                  : displayValue === ''
+                                    ? 'Chưa có đơn giá'
+                                    : undefined
+                              }
                               onChange={(e) => {
                                 const raw = e.target.value;
                                 if (raw === '') return;
                                 handleSheetCellPrice(row.brandKey, form, Number(raw));
                               }}
-                              className="w-[5.5rem] px-1.5 py-1 text-right font-mono font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70"
-                              aria-label={`${form} ${row.brand}`}
+                              className={`w-[6.75rem] px-1.5 py-1 text-right font-mono rounded-md border focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70 ${
+                                inherited
+                                  ? 'font-medium italic text-slate-400 dark:text-slate-500 bg-slate-50/80 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800'
+                                  : 'font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700'
+                              }`}
+                              aria-label={
+                                inherited
+                                  ? `${form} ${row.brand} (giá chung)`
+                                  : `${form} ${row.brand}`
+                              }
                             />
                           </td>
                         );
                       })}
                       {!materialsReadOnly && (
                         <td className="py-1.5 px-3 text-right">
+                          {inheritedOnly ? (
+                            <span className="text-[11px] italic text-slate-400">Giá chung</span>
+                          ) : (
                           <button
                             type="button"
                             onClick={() => {
@@ -924,14 +1037,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Trash2 className="w-3.5 h-3.5" />
                             Xóa
                           </button>
+                          )}
                         </td>
                       )}
                     </tr>
-                  ))}
-                  {sheetView.brandRows.length === 0 && (
+                    );
+                  })}
+                  {displayBrandRows.length === 0 && (
                     <tr>
                       <td
-                        colSpan={materialsReadOnly ? 7 : 8}
+                        colSpan={2 + MATERIAL_SHEET_FORM_LABELS.length + (materialsReadOnly ? 0 : 1)}
                         className="px-4 py-6 text-center text-slate-500"
                       >
                         Chưa có dòng sứ nào. Bấm &quot;Thêm dòng sứ&quot; để tạo danh mục.
@@ -942,7 +1057,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </table>
             </div>
 
-            {sheetView.extras.length > 0 && (
+            {displayExtras.length > 0 && (
               <div className="border-t border-slate-200 dark:border-slate-800">
                 <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-950/40">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
@@ -960,9 +1075,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                      {sheetView.extras.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                          <td className="py-2 px-4 font-bold text-slate-900 dark:text-white">{item.name}</td>
+                      {displayExtras.map(({ item, inherited }) => (
+                        <tr key={`${inherited ? 'shared' : 'clinic'}-${item.id}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                          <td className={`py-2 px-4 font-bold ${inherited ? 'text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-white'}`}>{item.name}</td>
                           <td className="py-2 px-4 text-slate-500">{item.origin}</td>
                           <td className="py-2 px-4 text-right">
                             <input
@@ -970,13 +1085,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               step={10000}
                               min={0}
                               disabled={materialsReadOnly}
-                              value={item.unitPrice}
-                              onChange={(e) => handleExtraPriceChange(item.id, Number(e.target.value))}
-                              className="w-28 px-2 py-1 text-right font-mono font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70"
+                              value={item.unitPrice > 0 ? item.unitPrice : ''}
+                              placeholder="Chưa có đơn giá"
+                              title={inherited ? 'Giá chung (chưa đặt giá riêng)' : undefined}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                if (raw === '') return;
+                                if (inherited) handleInheritedExtraPrice(item, Number(raw));
+                                else handleExtraPriceChange(item.id, Number(raw));
+                              }}
+                              className={`w-28 px-2 py-1 text-right font-mono rounded-md border focus:outline-hidden focus:ring-2 focus:ring-teal-500 disabled:opacity-70 ${
+                                inherited
+                                  ? 'font-medium italic text-slate-400 dark:text-slate-500 bg-slate-50/80 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800'
+                                  : 'font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700'
+                              }`}
                             />
                           </td>
                           {!materialsReadOnly && (
                             <td className="py-2 px-4 text-right">
+                              {inherited ? (
+                                <span className="text-[11px] italic text-slate-400">Giá chung</span>
+                              ) : (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -990,6 +1119,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <Trash2 className="w-3.5 h-3.5" />
                                 Xóa
                               </button>
+                              )}
                             </td>
                           )}
                         </tr>

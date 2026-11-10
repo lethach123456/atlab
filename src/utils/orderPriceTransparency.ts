@@ -69,8 +69,8 @@ export function clinicRowForMaterial(
 /**
  * Price suggestion + source for order forms.
  * Unit/total follow resolveMaterialPricesForClinic + getUnitPriceForMaterial.
- * Source is per-material: clinic only when THIS material is in the clinic table;
- * never "clinic" merely because some other clinic rows exist.
+ * Source is per-material: "clinic" only when THIS material has a row in the clinic table;
+ * an absent clinic row falls back to shared (explicit clinic unitPrice 0 is not absent).
  */
 export function explainOrderAmountSuggestion(input: {
   clinicName: string;
@@ -111,12 +111,11 @@ export function explainOrderAmountSuggestion(input: {
     } else if (!clinicHasTable) {
       source = 'shared';
     } else if (clinicHit) {
-      // Clinic catalog row present (resolve uses clinic table wholesale).
       source = 'clinic';
     } else {
-      // Resolved via shared-only path (no clinic table for this clinic).
+      // Clinic table exists but this material row is absent → shared fallback.
       const sharedHit = matchMaterial(input.material, input.sharedPrices);
-      source = sharedHit ? 'shared' : 'unavailable';
+      source = sharedHit && sharedHit.unitPrice > 0 ? 'shared' : 'unavailable';
     }
   } else {
     source = 'unavailable';

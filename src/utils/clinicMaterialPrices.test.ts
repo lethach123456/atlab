@@ -83,4 +83,60 @@ describe('clinic material prices', () => {
   it('normalizes clinic key aliases', () => {
     assert.equal(clinicMaterialPriceKey('Nha khoa Lăng Cô'), clinicMaterialPriceKey('Lăng Cô'));
   });
+
+  it('resolves the bare family name (Đắp mài) like other catalog rows', () => {
+    const catalog: MaterialPriceConfig[] = [
+      ...shared,
+      {
+        id: 'mat_zirconia',
+        materialKey: 'zirconia',
+        name: 'Zirconia',
+        category: 'Đắp Mài',
+        origin: 'Đức',
+        unitPrice: 250000,
+        retailSuggestedPrice: 1400000,
+        defaultWarranty: '15 năm',
+        strengthMpa: 1150,
+      },
+    ];
+    const noCustom = resolveMaterialPricesForClinic('Nha khoa Lăng Cô', catalog, []);
+    assert.equal(getUnitPriceForMaterial('Zirconia', noCustom), 250000);
+
+    const clinicOnlyFull = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [catalog[0]]);
+    const resolvedCustom = resolveMaterialPricesForClinic('Nha khoa Lăng Cô', catalog, clinicOnlyFull);
+    // Absent clinic row falls back to shared.
+    assert.equal(getUnitPriceForMaterial('Zirconia', resolvedCustom), 250000);
+    assert.equal(getUnitPriceForMaterial('Full Zirconia', resolvedCustom), 390000);
+
+    const clinicWithDapMai = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [
+      catalog[0],
+      { ...catalog[2], unitPrice: 200000 },
+    ]);
+    const resolvedDapMai = resolveMaterialPricesForClinic('Nha khoa Lăng Cô', catalog, clinicWithDapMai);
+    assert.equal(getUnitPriceForMaterial('Zirconia', resolvedDapMai), 200000);
+  });
+
+  it('falls back to shared when the clinic table omits that material row', () => {
+    const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [shared[0]]);
+    const resolved = resolveMaterialPricesForClinic('Nha khoa Lăng Cô', shared, rows);
+    assert.equal(getUnitPriceForMaterial('Full Zirconia', resolved), 390000);
+    assert.equal(getUnitPriceForMaterial('Full UNC', resolved), 130000);
+  });
+
+  it('uses the explicit clinic price when the row exists, including 0', () => {
+    const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [
+      { ...shared[0], unitPrice: 350000 },
+      { ...shared[1], unitPrice: 0, retailSuggestedPrice: 0 },
+    ]);
+    const resolved = resolveMaterialPricesForClinic('Nha khoa Lăng Cô', shared, rows);
+    assert.equal(getUnitPriceForMaterial('Full Zirconia', resolved), 350000);
+    // Explicit 0 is not treated as absent — do not fall back to shared 130000.
+    assert.equal(getUnitPriceForMaterial('Full UNC', resolved), 0);
+  });
+
+  it('returns 0 when the material is missing from both clinic and shared tables', () => {
+    const rows = attachClinicMetaToPrices('Lăng Cô', 'partner_abc', [shared[0]]);
+    const resolved = resolveMaterialPricesForClinic('Nha khoa Lăng Cô', shared, rows);
+    assert.equal(getUnitPriceForMaterial('Zirconia', resolved), 0);
+  });
 });

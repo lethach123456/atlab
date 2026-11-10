@@ -23,8 +23,10 @@ export const DEFAULT_LAB_PROFILE: LabProfileConfig = {
 };
 
 /**
- * Danh mục Dòng Sứ theo bảng giá Lab (Sườn / Full / Veneer / Sườn implant / Full implant).
+ * Danh mục Dòng Sứ theo bảng giá Lab (Sườn / Full / Veneer / Đắp mài / Sườn implant / Full implant).
+ * Cột Đắp mài lưu đúng tên họ sứ (vd. "Zirconia"), không gắn tiền tố form.
  * Giá trên sheet ghi theo nghìn đồng → unitPrice lưu VNĐ (× 1000).
+ * Đắp mài không có giá mặc định trên sheet (unitPrice 0 / chưa nhập).
  */
 export const MATERIAL_PRICES_SEED_VERSION = '2026-11-06-sheet-v2';
 
@@ -33,9 +35,13 @@ export const MATERIAL_SHEET_FORM_LABELS = [
   'Sườn',
   'Full',
   'Veneer',
+  'Đắp mài',
   'Sườn implant',
   'Full implant',
 ] as const;
+
+/** Form whose catalog/order name is the bare family (no "Đắp mài " prefix). */
+export const DAP_MAI_SHEET_FORM = 'Đắp mài' as const;
 
 export type MaterialSheetFormLabel = (typeof MATERIAL_SHEET_FORM_LABELS)[number];
 
@@ -57,6 +63,7 @@ const MATERIAL_SHEET_FORMS: SheetForm[] = [
   { form: 'Sườn', category: 'Sườn Sứ Zirconia' },
   { form: 'Full', category: 'Zirconia Nguyên Khối (Full)' },
   { form: 'Veneer', category: 'Mặt Dán Sứ Veneer' },
+  { form: 'Đắp mài', category: 'Đắp Mài' },
   { form: 'Sườn implant', category: 'Phục Hình Trên Implant' },
   { form: 'Full implant', category: 'Phục Hình Trên Implant' },
 ];
@@ -70,9 +77,16 @@ export function categoryForSheetForm(form: MaterialSheetFormLabel): string {
 }
 
 export function materialSheetItemName(form: MaterialSheetFormLabel, brand: string): string {
-  return `${form} ${brand.trim()}`.trim();
+  const trimmed = brand.trim();
+  if (form === DAP_MAI_SHEET_FORM) return trimmed;
+  return `${form} ${trimmed}`.trim();
 }
 
+export function sheetBrandKey(brand: string): string {
+  return brand.trim().toLowerCase();
+}
+
+/** Prefixed sheet names only (Sườn/Full/…). Bare family names are handled in groupMaterialPricesForSheet. */
 export function parseMaterialSheetName(
   name: string
 ): { form: MaterialSheetFormLabel; brand: string } | null {
@@ -109,40 +123,75 @@ export interface MaterialPricesSheetView {
   extras: MaterialPriceConfig[];
 }
 
+function upsertSheetBrandRow(
+  brandMap: Map<string, MaterialSheetBrandRow>,
+  brandOrder: string[],
+  brandKey: string,
+  brand: string,
+  item: MaterialPriceConfig,
+  form: MaterialSheetFormLabel
+): void {
+  let row = brandMap.get(brandKey);
+  if (!row) {
+    row = {
+      brandKey,
+      brand,
+      origin: item.origin,
+      strengthMpa: item.strengthMpa,
+      defaultWarranty: item.defaultWarranty,
+      byForm: {},
+      configIds: [],
+    };
+    brandMap.set(brandKey, row);
+    brandOrder.push(brandKey);
+  }
+  if (!row.byForm[form]) {
+    row.byForm[form] = item;
+    row.configIds.push(item.id);
+  }
+  if (item.origin?.trim()) row.origin = item.origin;
+  if (item.strengthMpa) row.strengthMpa = item.strengthMpa;
+  if (item.defaultWarranty?.trim()) row.defaultWarranty = item.defaultWarranty;
+  if (form === 'Full') row.brand = brand;
+}
+
 export function groupMaterialPricesForSheet(
   prices: MaterialPriceConfig[]
 ): MaterialPricesSheetView {
   const brandMap = new Map<string, MaterialSheetBrandRow>();
   const brandOrder: string[] = [];
-  const extras: MaterialPriceConfig[] = [];
+  const pendingBare: MaterialPriceConfig[] = [];
 
   for (const item of prices) {
     const parsed = parseMaterialSheetName(item.name);
     if (!parsed) {
+      pendingBare.push(item);
+      continue;
+    }
+    upsertSheetBrandRow(
+      brandMap,
+      brandOrder,
+      sheetBrandKey(parsed.brand),
+      parsed.brand,
+      item,
+      parsed.form
+    );
+  }
+
+  const knownKeys = new Set<string>([
+    ...brandMap.keys(),
+    ...MATERIAL_SHEET_BRANDS.map((row) => sheetBrandKey(row.brand)),
+  ]);
+  const extras: MaterialPriceConfig[] = [];
+  for (const item of pendingBare) {
+    const key = sheetBrandKey(item.name);
+    if (!key || !knownKeys.has(key) || brandMap.get(key)?.byForm[DAP_MAI_SHEET_FORM]) {
       extras.push(item);
       continue;
     }
-    const brandKey = parsed.brand.toLowerCase();
-    let row = brandMap.get(brandKey);
-    if (!row) {
-      row = {
-        brandKey,
-        brand: parsed.brand,
-        origin: item.origin,
-        strengthMpa: item.strengthMpa,
-        defaultWarranty: item.defaultWarranty,
-        byForm: {},
-        configIds: [],
-      };
-      brandMap.set(brandKey, row);
-      brandOrder.push(brandKey);
-    }
-    row.byForm[parsed.form] = item;
-    row.configIds.push(item.id);
-    if (item.origin?.trim()) row.origin = item.origin;
-    if (item.strengthMpa) row.strengthMpa = item.strengthMpa;
-    if (item.defaultWarranty?.trim()) row.defaultWarranty = item.defaultWarranty;
-    if (parsed.form === 'Full') row.brand = parsed.brand;
+    const official = MATERIAL_SHEET_BRANDS.find((row) => sheetBrandKey(row.brand) === key)?.brand;
+    const brand = brandMap.get(key)?.brand || official || item.name.trim();
+    upsertSheetBrandRow(brandMap, brandOrder, key, brand, item, DAP_MAI_SHEET_FORM);
   }
 
   return {
@@ -179,10 +228,12 @@ function materialRowId(name: string): string {
   return `mat_${slug}`;
 }
 
-const SHEET_MATERIAL_PRICES: MaterialPriceConfig[] = MATERIAL_SHEET_BRANDS.flatMap((brand) =>
-  MATERIAL_SHEET_FORMS.map((form, index) => {
-    const name = `${form.form} ${brand.brand}`;
-    const unitPrice = brand.pricesThousands[index] * 1000;
+const SHEET_MATERIAL_PRICES: MaterialPriceConfig[] = MATERIAL_SHEET_BRANDS.flatMap((brand) => {
+  let pricedIndex = 0;
+  return MATERIAL_SHEET_FORMS.map((form) => {
+    const name = materialSheetItemName(form.form, brand.brand);
+    const isDapMai = form.form === DAP_MAI_SHEET_FORM;
+    const unitPrice = isDapMai ? 0 : brand.pricesThousands[pricedIndex++] * 1000;
     return {
       id: materialRowId(name),
       materialKey: name.toLowerCase(),
@@ -190,12 +241,12 @@ const SHEET_MATERIAL_PRICES: MaterialPriceConfig[] = MATERIAL_SHEET_BRANDS.flatM
       category: form.category,
       origin: brand.origin,
       unitPrice,
-      retailSuggestedPrice: suggestedRetailFromUnitPrice(unitPrice),
+      retailSuggestedPrice: unitPrice > 0 ? suggestedRetailFromUnitPrice(unitPrice) : 0,
       defaultWarranty: '15 năm',
       strengthMpa: brand.strengthMpa,
     };
-  })
-);
+  });
+});
 
 /** Dòng phụ không nằm trên sheet giá sứ (giữ lại trong bảng). */
 const EXTRA_MATERIAL_PRICES: MaterialPriceConfig[] = [
@@ -255,14 +306,18 @@ export function seedMaterialPricesFromDefaults(
       existingByKey.get(def.name.toLowerCase().trim());
     if (match) {
       usedIds.add(match.id);
+      const keepExistingPrice =
+        def.unitPrice === 0 &&
+        parseMaterialSheetName(def.name) === null &&
+        sheetBrandKey(def.name) === sheetBrandKey(match.name);
       const merged: MaterialPriceConfig = {
         ...match,
         materialKey: def.materialKey,
         name: def.name,
         category: def.category,
         origin: def.origin,
-        unitPrice: def.unitPrice,
-        retailSuggestedPrice: def.retailSuggestedPrice,
+        unitPrice: keepExistingPrice ? match.unitPrice : def.unitPrice,
+        retailSuggestedPrice: keepExistingPrice ? match.retailSuggestedPrice : def.retailSuggestedPrice,
         defaultWarranty: def.defaultWarranty,
         strengthMpa: def.strengthMpa,
       };
@@ -305,7 +360,9 @@ export function seedMaterialPricesFromDefaults(
 }
 
 function isLegacySheetSupersededMaterial(value: string): boolean {
-  const v = value.toLowerCase();
+  const v = value.toLowerCase().trim();
+  // Bare family names (Zirconia, Cercon HT, …) are the Đắp mài catalog rows — never drop them.
+  if (MATERIAL_SHEET_BRANDS.some((row) => sheetBrandKey(row.brand) === v)) return false;
   const markers = [
     'zirconia',
     'zirco',
@@ -421,7 +478,16 @@ export function listClinicsWithCustomMaterialPrices(
   return Array.from(names.values()).sort((a, b) => a.localeCompare(b, 'vi'));
 }
 
-/** Giá áp dụng cho nha khoa: bảng riêng nếu có, không thì bảng chung. */
+function materialMatchKeys(row: Pick<MaterialPriceConfig, 'name' | 'materialKey'>): string[] {
+  return [row.materialKey, row.name].map((value) => value.toLowerCase().trim()).filter(Boolean);
+}
+
+/**
+ * Giá áp dụng cho nha khoa, theo từng dòng sứ:
+ * - Có dòng trong bảng riêng → dùng giá riêng (kể cả khi đơn giá = 0).
+ * - Bảng riêng tồn tại nhưng thiếu dòng đó → lấy giá bảng chung.
+ * - Chưa có bảng riêng → toàn bộ bảng chung.
+ */
 export function resolveMaterialPricesForClinic(
   clinicName: string,
   sharedPrices: MaterialPriceConfig[],
@@ -431,7 +497,32 @@ export function resolveMaterialPricesForClinic(
   if (!key) return sharedPrices;
   const custom = clinicRows.filter((row) => row.clinicKey === key);
   if (custom.length === 0) return sharedPrices;
-  return custom.map(stripClinicPriceFields);
+
+  const clinicConfigs = custom.map(stripClinicPriceFields);
+  const clinicByKey = new Map<string, MaterialPriceConfig>();
+  for (const row of clinicConfigs) {
+    for (const matchKey of materialMatchKeys(row)) {
+      if (!clinicByKey.has(matchKey)) clinicByKey.set(matchKey, row);
+    }
+  }
+
+  const usedIds = new Set<string>();
+  const next: MaterialPriceConfig[] = [];
+  for (const shared of sharedPrices) {
+    const match = materialMatchKeys(shared)
+      .map((matchKey) => clinicByKey.get(matchKey))
+      .find(Boolean);
+    if (match) {
+      usedIds.add(match.id);
+      next.push(match);
+    } else {
+      next.push(shared);
+    }
+  }
+  for (const row of clinicConfigs) {
+    if (!usedIds.has(row.id)) next.push(row);
+  }
+  return next;
 }
 
 /** Sao chép bảng chung thành các dòng gắn nha khoa (chưa ghi id Firestore cuối). */
