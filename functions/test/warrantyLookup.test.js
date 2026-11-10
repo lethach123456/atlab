@@ -38,3 +38,26 @@ test('other sheet variants on the warranty payload stay prefixed as stored', () 
   const result = buildWarrantyResult('UC123', [{...base, material: 'Full Zirconia', teeth: '11'}]);
   assert.equal(result.restorations[0].material, 'Full Zirconia');
 });
+
+test('materials containing zaroc return exactly Phôi đơn lớp Zaroc', () => {
+  const cases = ['Zaroc', 'ZAROC', 'zaroc', 'Za roc', 'Zaróc', 'Full Zaroc', 'Đắp mài Zaroc'];
+  for (const material of cases) {
+    const result = buildWarrantyResult('UC123', [{...base, material, teeth: '11'}]);
+    assert.equal(result.restorations[0].material, 'Phôi đơn lớp Zaroc', material);
+  }
+});
+
+test('non-zaroc materials still strip đắp mài and otherwise stay as stored', () => {
+  assert.equal(
+    buildWarrantyResult('UC123', [{...base, material: 'Zirconia', teeth: '11'}]).restorations[0].material,
+    'Zirconia'
+  );
+  assert.equal(
+    buildWarrantyResult('UC123', [{...base, material: 'Đắp mài Cercon HT', teeth: '11'}]).restorations[0].material,
+    'Cercon HT'
+  );
+  assert.equal(
+    buildWarrantyResult('UC123', [{...base, material: 'Full Zirconia', teeth: '11'}]).restorations[0].material,
+    'Full Zirconia'
+  );
+});
