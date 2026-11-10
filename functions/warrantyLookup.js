@@ -1,3 +1,5 @@
+import { displayMaterialName } from './materialDisplayName.js';
+
 const normalizeIdentity = value => typeof value === 'string' ? value.normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('vi') : '';
 
 /** Build a response from rows belonging to one warranty card. */
@@ -20,7 +22,7 @@ export function buildWarrantyResult(code, rows) {
     phone: typeof row.phone === 'string' ? row.phone : '',
     clinicName: typeof row.clinicName === 'string' ? row.clinicName : '',
     clinicAddress: typeof row.clinicAddress === 'string' ? row.clinicAddress : '',
-    material: typeof row.material === 'string' ? row.material : '',
+    material: displayMaterialName(typeof row.material === 'string' ? row.material : ''),
     teeth: typeof row.teeth === 'string' ? row.teeth : '',
     teethCount: typeof row.teethCount === 'number' ? row.teethCount : 0,
     warrantyPeriod: typeof row.warrantyPeriod === 'string' ? row.warrantyPeriod : '',

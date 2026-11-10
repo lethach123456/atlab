@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { DentalOrder, LabProfileConfig } from '../types/dental';
 import { formatVND, DEFAULT_LAB_PROFILE } from '../utils/financeUtils';
+import { displayMaterialName } from '../utils/materialDisplayName';
 import { exportInvoiceToPdf } from '../utils/pdfExporter';
 import {
   X,
@@ -335,7 +336,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                         </td>
                       )}
                       <td className="py-2 px-3 text-slate-800 border-r border-slate-200">
-                        {o.material}
+                        {displayMaterialName(o.material)}
                       </td>
                       <td className="py-2 px-2.5 font-mono text-[11px] text-slate-700 border-r border-slate-200 max-w-[140px] truncate">
                         {o.teeth}

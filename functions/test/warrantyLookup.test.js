@@ -17,3 +17,24 @@ test('Preserves nonstandard tooth descriptions and empty positions', () => {
   const result = buildWarrantyResult('UC123', [{...base, teeth:'1 răng'}, {...base, teeth:''}]);
   assert.equal(result.teeth, '1 răng');
 });
+
+test('đắp mài restorations expose the plain family name, never the sheet label', () => {
+  const result = buildWarrantyResult('UC123', [
+    {...base, material: 'Zirconia', teeth: '11'},
+    {...base, material: 'Cercon HT', teeth: '21'},
+  ]);
+  const names = result.restorations.map(row => row.material);
+  assert.ok(names.includes('Zirconia'));
+  assert.ok(names.includes('Cercon HT'));
+  for (const name of names) {
+    assert.equal(/đắp\s*mài/i.test(name), false);
+  }
+  const prefixed = buildWarrantyResult('UC123', [{...base, material: 'Đắp mài Zirconia', teeth: '11'}]);
+  assert.equal(prefixed.restorations[0].material, 'Zirconia');
+  assert.equal(/đắp\s*mài/i.test(prefixed.restorations[0].material), false);
+});
+
+test('other sheet variants on the warranty payload stay prefixed as stored', () => {
+  const result = buildWarrantyResult('UC123', [{...base, material: 'Full Zirconia', teeth: '11'}]);
+  assert.equal(result.restorations[0].material, 'Full Zirconia');
+});

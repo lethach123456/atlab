@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { DentalOrder, LabProfileConfig } from '../types/dental';
 import { formatVND, DEFAULT_LAB_PROFILE } from './financeUtils';
+import { displayMaterialName } from './materialDisplayName';
 
 export interface ExportInvoicePdfOptions {
   orders: DentalOrder[];
@@ -380,7 +381,7 @@ export async function exportInvoiceToPdf(
         code: [order.warrantyCode || ''],
         patient: wrapText(ctx, order.patientName || '', showClinicCol ? 98 : 134),
         clinic: showClinicCol ? wrapText(ctx, order.clinicName || '', 78) : [''],
-        material: wrapText(ctx, order.material || '', showClinicCol ? 96 : 122),
+        material: wrapText(ctx, displayMaterialName(order.material), showClinicCol ? 96 : 122),
         teeth: wrapText(ctx, order.teeth || '', showClinicCol ? 88 : 96),
         count: [String(order.teethCount || 1)],
         total: [formatVND(order.totalAmount || 0)],
