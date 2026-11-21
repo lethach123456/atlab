@@ -172,7 +172,7 @@ export function ProfitView({ sources, loading, loadError, onOpenDelivery, onAddE
                   </div>
                 </div>
                 <p className={`mt-3 ${muted}`}>
-                  Mặt bằng, điện nước lấy từ bảng chi khi chưa chỉnh sửa. Bấm số tiền để sửa cho tháng này. Lương và giao vận lấy số lớn hơn giữa bảng nghiệp vụ và phiếu chi cùng nhóm để tránh cộng trùng. Lợi nhuận ròng = Tiền đã thu công nợ − Tổng chi phí; tiền thu tính theo ngày thu, không theo kỳ công nợ.
+                  Mặt bằng, điện nước lấy từ bảng chi khi chưa chỉnh sửa. Bấm số tiền để sửa cho tháng này. Lương và giao vận lấy số lớn hơn giữa bảng nghiệp vụ và phiếu chi cùng nhóm để tránh cộng trùng. Lợi nhuận ròng = Tiền đã thu công nợ − Tổng chi phí; tiền thu tính theo kỳ công nợ, không theo ngày thu.
                 </p>
               </section>
             </div>

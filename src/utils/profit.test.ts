@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CashflowTransaction, ClinicDebtRecord, DebtPaymentRecord } from '../types/dental';
-import { calculateMonthlyProfit, PROFIT_EXPENSE_CATEGORIES, monthYearFromCollectedDate, paymentCollectedMonthYear, type ProfitSources } from './profit';
+import { calculateMonthlyProfit, PROFIT_EXPENSE_CATEGORIES, paymentCollectedMonthYear, type ProfitSources } from './profit';
 
 const month = '11/2026';
 function expense(id: string, category: string, amount: number, monthYear = month): CashflowTransaction {
@@ -73,26 +73,26 @@ test('extra rows are individually counted and salary and shipping cash payments 
   assert.equal(report.expenses, 4_180_235);
 });
 
-test('net profit uses payment date, not the debt period, and keeps accrual profit unchanged', () => {
+test('net profit attributes collections to the debt period, not the payment date, and keeps accrual profit unchanged', () => {
   const input = sources(
-    [expense('supplies', 'Vật tư', 2_000_000, '11/2026')],
+    [expense('supplies', 'Vật tư', 2_000_000, '10/2026')],
     [payment('oct-debt-nov-cash', '10/2026', 8_000_000, '05/11/2026')],
   );
   const october = calculateMonthlyProfit('10/2026', input);
   const november = calculateMonthlyProfit('11/2026', input);
-  assert.equal(october.collectedDebtAmount, 0);
-  assert.equal(october.expenses, 0);
-  assert.equal(october.netProfit, 0);
-  assert.equal(october.profit, 0);
-  assert.equal(november.collectedDebtAmount, 8_000_000);
-  assert.equal(november.expenses, 2_000_000);
-  assert.equal(november.netProfit, 6_000_000);
-  assert.equal(november.profit, -2_000_000);
+  assert.equal(october.collectedDebtAmount, 8_000_000);
+  assert.equal(october.expenses, 2_000_000);
+  assert.equal(october.netProfit, 6_000_000);
+  assert.equal(october.profit, -2_000_000);
+  assert.equal(november.collectedDebtAmount, 0);
+  assert.equal(november.expenses, 0);
+  assert.equal(november.netProfit, 0);
+  assert.equal(november.profit, 0);
 });
 
-test('partial payments in the collection month are summed and not double-counted with cashflow or manual paidAmount', () => {
+test('partial payments for the same debt period are summed and not double-counted with cashflow or manual paidAmount', () => {
   const cashflows = [
-    expense('supplies', 'Vật tư', 1_000_000),
+    expense('supplies', 'Vật tư', 1_000_000, '10/2026'),
     {
       id: 'cf_inc_pay_one',
       type: 'income' as const,
@@ -131,22 +131,23 @@ test('partial payments in the collection month are summed and not double-counted
     payment('pay_one', '10/2026', 3_000_000, '05/11/2026'),
     payment('pay_two', '10/2026', 2_000_000, '20/11/2026'),
   ], debts);
-  const report = calculateMonthlyProfit('11/2026', input);
-  assert.equal(report.collectedDebtAmount, 5_000_000);
-  assert.equal(report.expenses, 1_000_000);
-  assert.equal(report.netProfit, 4_000_000);
-  assert.equal(report.profit, -1_000_000);
+  const october = calculateMonthlyProfit('10/2026', input);
+  const november = calculateMonthlyProfit('11/2026', input);
+  assert.equal(october.collectedDebtAmount, 5_000_000);
+  assert.equal(october.expenses, 1_000_000);
+  assert.equal(october.netProfit, 4_000_000);
+  assert.equal(october.profit, -1_000_000);
+  assert.equal(november.collectedDebtAmount, 0);
 });
 
-test('invalid payment dates fall back to the payment kỳ and carried credit is ignored', () => {
-  assert.equal(monthYearFromCollectedDate(''), null);
-  assert.equal(monthYearFromCollectedDate('32/11/2026'), null);
-  assert.equal(monthYearFromCollectedDate('05/11/2026'), '11/2026');
+test('collections follow the payment kỳ even when the payment date is missing or later, and ignore invalid kỳ values', () => {
+  assert.equal(paymentCollectedMonthYear({ paymentDate: '05/11/2026', monthYear: '10/2026' }), '10/2026');
   assert.equal(paymentCollectedMonthYear({ paymentDate: '', monthYear: '10/2026' }), '10/2026');
-  assert.equal(paymentCollectedMonthYear({ paymentDate: 'not-a-date', monthYear: '10/2026' }), '10/2026');
+  assert.equal(paymentCollectedMonthYear({ paymentDate: '05/11/2026', monthYear: 'not-a-month' }), null);
   const input = sources([], [
     payment('no-date', '10/2026', 1_500_000, ''),
-    payment('bad-date', '10/2026', 500_000, '99/99/2026'),
+    payment('later-date', '10/2026', 500_000, '05/11/2026'),
+    payment('bad-ky', '99/99/2026', 9_000_000, '05/10/2026'),
   ]);
   assert.equal(calculateMonthlyProfit('10/2026', input).collectedDebtAmount, 2_000_000);
   assert.equal(calculateMonthlyProfit('11/2026', input).collectedDebtAmount, 0);

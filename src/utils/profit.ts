@@ -47,29 +47,10 @@ export interface ProfitSources {
 
 const collectedAmount = (value: number) => Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
 
-/** Parse DD/MM/YYYY (or D-M-YYYY) into MM/YYYY; invalid or empty dates return null. */
-export function monthYearFromCollectedDate(dateStr: string | null | undefined): string | null {
-  const raw = String(dateStr ?? '').trim();
-  if (!raw) return null;
-  const parts = raw.split(/[/.\-]/).map((part) => part.trim());
-  if (parts.length < 3) return null;
-  const day = Number(parts[0]);
-  const month = Number(parts[1]);
-  const yearToken = parts[2];
-  let year = Number(yearToken);
-  if (yearToken.length === 2 && Number.isInteger(year)) year += 2000;
-  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
-  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2020 || year > 2100) return null;
-  if (day > new Date(year, month, 0).getDate()) return null;
-  return `${String(month).padStart(2, '0')}/${year}`;
-}
-
-/** Month a debt payment counts toward cash collected: payment date, else the payment's kỳ. */
+/** Month a debt payment counts toward net profit: the kỳ công nợ, not the payment date. */
 export function paymentCollectedMonthYear(
   payment: Pick<DebtPaymentRecord, 'paymentDate' | 'monthYear'>,
 ): string | null {
-  const fromDate = monthYearFromCollectedDate(payment.paymentDate);
-  if (fromDate) return fromDate;
   return debtMonthValue(payment.monthYear) !== null ? payment.monthYear : null;
 }
 
