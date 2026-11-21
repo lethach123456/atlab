@@ -1,11 +1,50 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  GoogleAuthProvider,
+} from 'firebase/auth';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+
+/** Persist the refresh token on this device (IndexedDB, then localStorage). */
+function createAuth() {
+  try {
+    return initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    // Already initialized (Vite HMR) or the environment already created Auth.
+    return getAuth(app);
+  }
+}
+
+/** Keep the user profile and workspace data available across reloads and brief offline periods. */
+function createDb() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    }, firebaseConfig.firestoreDatabaseId);
+  } catch {
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+}
+
+export const auth = createAuth();
+export const db = createDb();
 export const googleProvider = new GoogleAuthProvider();
 
 export enum OperationType {

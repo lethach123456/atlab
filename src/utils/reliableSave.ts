@@ -30,7 +30,7 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
 
   // Prefer Firebase error codes over message substring matching.
   if (code === 'unauthenticated' || code.endsWith('/unauthenticated')) {
-    return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
+    return 'Chưa xác thực được với máy chủ. Kiểm tra kết nối rồi thử lại. Chỉ đăng nhập lại nếu hệ thống đưa về màn hình đăng nhập.';
   }
   if (code === 'permission-denied' || code.endsWith('/permission-denied')) {
     return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
@@ -48,7 +48,7 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
       if (typeof parsed.code === 'string' && parsed.code.trim()) {
         const nested = parsed.code.toLowerCase();
         if (nested.includes('unauthenticated')) {
-          return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
+          return 'Chưa xác thực được với máy chủ. Kiểm tra kết nối rồi thử lại. Chỉ đăng nhập lại nếu hệ thống đưa về màn hình đăng nhập.';
         }
         if (nested.includes('permission')) {
           return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
@@ -71,7 +71,7 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
       return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';
     }
     if (/phiên đăng nhập đã hết|chưa xác thực|đăng nhập lại/i.test(message)) {
-      return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
+      return 'Chưa xác thực được với máy chủ. Kiểm tra kết nối rồi thử lại. Chỉ đăng nhập lại nếu hệ thống đưa về màn hình đăng nhập.';
     }
     if (/offline/i.test(message)) return 'Đang offline — chưa lưu. Kiểm tra mạng rồi bấm Thử lại.';
     return message
@@ -92,7 +92,7 @@ export function formatSaveError(error: unknown, fallback = 'Không lưu được
     return 'Mất kết nối máy chủ — chưa lưu. Kiểm tra mạng rồi bấm Thử lại.';
   }
   if (lower.includes('unauthenticated') || lower.includes('auth/requires-recent-login')) {
-    return 'Phiên đăng nhập đã hết. Đăng nhập lại rồi thử.';
+    return 'Chưa xác thực được với máy chủ. Kiểm tra kết nối rồi thử lại. Chỉ đăng nhập lại nếu hệ thống đưa về màn hình đăng nhập.';
   }
   if (lower.includes('permission-denied') || lower.includes('insufficient permissions') || lower.includes('permission')) {
     return 'Không có quyền lưu dữ liệu. Liên hệ quản trị viên nếu bạn cần quyền ghi.';

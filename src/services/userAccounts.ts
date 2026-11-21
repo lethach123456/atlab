@@ -39,7 +39,7 @@ export function accountError(error: unknown): string {
       if (details?.reason === 'unsupported-provider') return 'Tài khoản dùng phương thức đăng nhập khác email và mật khẩu.';
       return 'Thông tin tài khoản đã thay đổi. Mở lại form Sửa rồi thử lại.';
     case 'functions/unauthenticated':
-      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+      return 'Chưa xác thực được với máy chủ. Kiểm tra kết nối rồi thử lại. Chỉ đăng nhập lại nếu hệ thống đưa về màn hình đăng nhập.';
     case 'functions/not-found':
       if (details?.reason === 'sale-auth-not-found') return 'Không tìm thấy tài khoản đăng nhập của sale.';
       return 'Chức năng đổi email chưa có trên Firebase. Vui lòng liên hệ quản trị dự án.';

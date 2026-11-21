@@ -94,7 +94,7 @@ const emptyProfile: LabProfileConfig = {
 function workspaceError(error: unknown): Error {
   const code = ((error as { code?: string })?.code || '').toLowerCase();
   if (code === 'unauthenticated' || code.endsWith('/unauthenticated')) {
-    return new Error('Phiên đăng nhập đã hết hoặc chưa xác thực. Đăng nhập lại rồi thử.');
+    return new Error('Chưa xác thực được với máy chủ. Kiểm tra kết nối rồi thử lại. Chỉ đăng nhập lại nếu hệ thống đưa về màn hình đăng nhập.');
   }
   if (code === 'permission-denied' || code.endsWith('/permission-denied')) {
     return new Error(

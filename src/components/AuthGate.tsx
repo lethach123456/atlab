@@ -1,36 +1,56 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, signOut, User } from 'firebase/auth';
-import { Loader2, LogOut, ShieldAlert } from 'lucide-react';
+import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react';
 import { auth, googleProvider } from '../lib/firebase';
 import { accountError, subscribeUserProfile } from '../services/userAccounts';
+import { resolveAuthAccess } from '../utils/authSession';
 import type { UserProfile } from '../types/user';
 import { LoginView } from './LoginView';
 
 export function AuthGate({ children }: { children: (profile: UserProfile) => React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [ready, setReady] = useState(false);
-  const [profileReady, setProfileReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [profileResolved, setProfileResolved] = useState(false);
+  const [profileError, setProfileError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
+  const userIdRef = useRef<string | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, (next) => {
+    const previousId = userIdRef.current;
+    const nextId = next?.uid ?? null;
+    userIdRef.current = nextId;
     setUser(next);
-    setProfile(null);
-    setProfileReady(false);
-    setReady(true);
+    setAuthReady(true);
+    if (previousId !== nextId) {
+      setProfile(null);
+      setProfileResolved(false);
+      setProfileError(false);
+      setError('');
+    }
   }), []);
 
   useEffect(() => {
     if (!user) return;
     return subscribeUserProfile(user.uid, (next) => {
       setProfile(next);
-      setProfileReady(true);
+      setProfileResolved(true);
+      setProfileError(false);
+      setError('');
     }, () => {
-      setError('Không đọc được quyền truy cập. Kiểm tra kết nối rồi tải lại trang.');
-      setProfileReady(true);
+      setProfileError(true);
+      setError('Không đọc được quyền truy cập. Kiểm tra kết nối rồi thử lại — phiên đăng nhập vẫn được giữ.');
     });
-  }, [user]);
+  }, [user, retryToken]);
+
+  const retryProfile = useCallback(() => {
+    setProfileError(false);
+    setError('');
+    if (!profile) setProfileResolved(false);
+    setRetryToken((value) => value + 1);
+  }, [profile]);
 
   async function login(action: () => Promise<unknown>) {
     setBusy(true);
@@ -44,7 +64,15 @@ export function AuthGate({ children }: { children: (profile: UserProfile) => Rea
     }
   }
 
-  if (!ready || (user && !profileReady)) {
+  const access = resolveAuthAccess({
+    authReady,
+    user,
+    profile,
+    profileResolved,
+    profileError,
+  });
+
+  if (access === 'loading') {
     return (
       <main className="grid min-h-screen place-items-center bg-slate-50 dark:bg-slate-950 p-6 text-slate-900 dark:text-slate-100">
         <div role="status" className="flex flex-col items-center gap-3 text-center">
@@ -56,7 +84,7 @@ export function AuthGate({ children }: { children: (profile: UserProfile) => Rea
       </main>
     );
   }
-  if (!user) {
+  if (access === 'login' || !user) {
     return <LoginView
       login={(email, password) => login(() => signInWithEmailAndPassword(auth, email, password))}
       googleLogin={() => login(() => signInWithPopup(auth, googleProvider))}
@@ -64,7 +92,40 @@ export function AuthGate({ children }: { children: (profile: UserProfile) => Rea
       busy={busy}
     />;
   }
-  if (!profile?.active) {
+  if (access === 'profile_unavailable') {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 dark:bg-slate-950 p-4 text-slate-900 dark:text-slate-100">
+        <section className="bento-card max-w-md w-full space-y-4 rounded-2xl p-6 sm:p-8 text-center">
+          <div className="mx-auto w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/25 flex items-center justify-center text-blue-600 dark:text-blue-400">
+            <RefreshCw className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <h1 className="font-display text-xl font-bold">Chưa tải được quyền truy cập</h1>
+          <p role="alert" className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            {error || 'Không đọc được quyền truy cập. Kiểm tra kết nối rồi thử lại — phiên đăng nhập vẫn được giữ.'}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={retryProfile}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
+              <span>Tải lại quyền truy cập</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setError(''); void signOut(auth); }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 px-5 py-2.5 text-sm font-semibold transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" aria-hidden="true" />
+              <span>Đăng xuất</span>
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+  if (access === 'blocked' || !profile?.active) {
     return (
       <main className="grid min-h-screen place-items-center bg-slate-50 dark:bg-slate-950 p-4 text-slate-900 dark:text-slate-100">
         <section className="bento-card max-w-md w-full space-y-4 rounded-2xl p-6 sm:p-8 text-center">
