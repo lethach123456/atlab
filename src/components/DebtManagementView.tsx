@@ -5,7 +5,7 @@ import {
   formatVND,
   sortMonthYearsDesc,
 } from '../utils/financeUtils';
-import { calculateDebtRows, DEBT_START_MONTH, debtMonthValue } from '../utils/debtLedger';
+import { calculateDebtRows, DEBT_START_MONTH, debtMonthValue, hasDebtActivityInPeriod } from '../utils/debtLedger';
 import { getCurrentMonthYear } from '../utils/dashboardMetrics';
 import { DateTextInput } from './DateTextInput';
 import {
@@ -100,8 +100,9 @@ export const DebtManagementView: React.FC<DebtManagementViewProps> = ({
         const q = searchClinic.toLowerCase().trim();
         if (!item.clinicName.toLowerCase().includes(q)) return false;
       }
-      if (item.remainingDebt <= 0) return false;
-      return true;
+      // Hide only clinics with no activity in the selected month.
+      // Clinics that settled their balance this month still appear.
+      return hasDebtActivityInPeriod(item);
     });
   }, [monthDebtRows, searchClinic]);
 

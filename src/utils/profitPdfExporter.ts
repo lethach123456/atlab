@@ -75,12 +75,15 @@ export function buildProfitPdfSections(report: MonthlyProfitReport): ProfitPdfSe
     ['Chi phí khác', report.extraExpense],
     ['Tổng chi phí', report.expenses, true],
     ['LỢI NHUẬN', report.profit, true],
+    ['Tiền đã thu công nợ', report.collectedDebtAmount],
+    ['LỢI NHUẬN RÒNG', report.netProfit, true],
   ];
   return [
     {
       title: '1. BẢNG LỢI NHUẬN',
       notes: [
         'Lợi nhuận = Doanh thu - Chiết khấu - Tổng chi phí. Các bảng bên dưới trình bày toàn bộ dữ liệu trong kỳ.',
+        'Lợi nhuận ròng = Tiền đã thu công nợ - Tổng chi phí. Tiền thu tính theo ngày thu; nếu không có ngày hợp lệ thì lấy kỳ trên phiếu thu. Không cộng phiếu quỹ Thu công nợ nha khoa và không cộng số đã thanh toán nhập tay trên sổ công nợ.',
         'Lương và giao vận dùng số lớn hơn giữa bảng nghiệp vụ và phiếu chi cùng nhóm để tránh cộng hai lần. Nha khoa trả phí giao vận được tách riêng.',
         ...fixedCostNotes,
       ],

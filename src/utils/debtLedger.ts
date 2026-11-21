@@ -69,6 +69,25 @@ export interface ClinicDebtRow {
   }[];
 }
 
+
+/** True when the clinic had debt movement or a carried balance in this period.
+ * A clinic that paid its balance down to zero this month still counts as active.
+ */
+export function hasDebtActivityInPeriod(row: ClinicDebtRow): boolean {
+  return row.oldDebt > 0
+    || row.carriedCredit > 0
+    || row.remainingDebt > 0
+    || row.balance !== 0
+    || row.currentMonthDebt > 0
+    || row.autoOrderDebt > 0
+    || row.manualCurrentDebt > 0
+    || row.discountAmount > 0
+    || row.openingAdjustment > 0
+    || row.paidFromPayments > 0
+    || row.paidFromRecords > 0
+    || row.orders.length > 0;
+}
+
 /** Revisions of one clinic/month are snapshots, never separate debts to add together. */
 function preferRecord(candidate: ClinicDebtRecord, existing: ClinicDebtRecord): boolean {
   if ((candidate.updatedAt || 0) !== (existing.updatedAt || 0)) {

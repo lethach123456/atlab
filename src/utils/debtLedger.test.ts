@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ClinicDebtRecord, DebtPaymentRecord, DentalOrder } from '../types/dental';
-import { calculateDebtRows, normalizeClinicName } from './debtLedger';
+import { calculateDebtRows, hasDebtActivityInPeriod, normalizeClinicName } from './debtLedger';
 
 const clinic = 'Lăng Cô';
 
@@ -284,4 +284,44 @@ test('a discounted clinic that pays its net balance carries no debt to the next 
   const rows = calculateDebtRows(orders, [], [payment('october', '10/2026', 87_500)], '11/2026', rates);
   assert.equal(rows[0].oldDebt, 0);
   assert.equal(rows[0].carriedCredit, 0);
+});
+
+test('clinics that settle a balance in the month stay visible; idle zero-balance clinics are hidden', () => {
+  const orders = [
+    order('ha-sep', '09/2026', 4_000_000, 'Lê Văn Hà'),
+    order('top-oct', '10/2026', 3_000_000, 'Top Dental'),
+    order('giang-oct', '10/2026', 2_000_000, 'Giang Nguyễn'),
+    order('idle-sep', '09/2026', 1_000_000, 'Nha khoa cũ'),
+  ];
+  const payments = [
+    payment('ha-oct', '10/2026', 4_000_000, 'Lê Văn Hà'),
+    payment('top-oct', '10/2026', 3_000_000, 'Top Dental'),
+    payment('giang-oct', '10/2026', 2_000_000, 'Giang Nguyễn'),
+    payment('idle-sep', '09/2026', 1_000_000, 'Nha khoa cũ'),
+  ];
+  const october = calculateDebtRows(orders, [], payments, '10/2026');
+  const visible = october.filter(hasDebtActivityInPeriod);
+  const names = visible.map((row) => row.clinicName).sort((a, b) => a.localeCompare(b, 'vi'));
+  assert.deepEqual(names, ['Giang Nguyễn', 'Lê Văn Hà', 'Top Dental']);
+  for (const name of names) {
+    const row = visible.find((item) => item.clinicName === name);
+    assert.equal(row?.remainingDebt, 0, name);
+    assert.equal(hasDebtActivityInPeriod(row!), true, name);
+  }
+  const idle = october.find((row) => row.clinicName === 'Nha khoa cũ');
+  assert.ok(idle);
+  assert.equal(idle.remainingDebt, 0);
+  assert.equal(hasDebtActivityInPeriod(idle), false);
+
+  const paidTotal = visible.reduce((sum, row) => sum + row.paidAmount, 0);
+  const remainingTotal = visible.reduce((sum, row) => sum + row.remainingDebt, 0);
+  assert.equal(paidTotal, 9_000_000);
+  assert.equal(remainingTotal, 0);
+});
+
+test('carried unpaid balances stay visible even without new orders or payments in the month', () => {
+  const orders = [order('oct', '10/2026', 2_000_000)];
+  const november = oneRow(orders, [], [], '11/2026');
+  assert.equal(november.remainingDebt, 2_000_000);
+  assert.equal(hasDebtActivityInPeriod(november), true);
 });

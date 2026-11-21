@@ -6,7 +6,7 @@ import { ProfitPdfPreviewModal } from './ProfitPdfPreviewModal';
 import { getCurrentMonthYear } from '../utils/dashboardMetrics';
 import { debtMonthValue } from '../utils/debtLedger';
 import { formatVND, sortMonthYearsDesc } from '../utils/financeUtils';
-import { calculateMonthlyProfit, isManualProfitExpense, type MonthlyProfitReport, type ProfitExpenseKind, type ProfitSources } from '../utils/profit';
+import { calculateMonthlyProfit, isManualProfitExpense, paymentCollectedMonthYear, type MonthlyProfitReport, type ProfitExpenseKind, type ProfitSources } from '../utils/profit';
 
 interface ProfitViewProps {
   sources: ProfitSources;
@@ -52,7 +52,7 @@ export function ProfitView({ sources, loading, loadError, onOpenDelivery, onAddE
       return next;
     });
   }, []);
-  const { orders, cashflows, deliveries, payrolls, clinicDebts, discountRates, users, commissions, fixedExpenses } = sources;
+  const { orders, cashflows, deliveries, payrolls, clinicDebts, discountRates, users, commissions, fixedExpenses, debtPayments } = sources;
   const months = useMemo(() => {
     const values = new Set([currentMonth]);
     for (const rows of [orders, cashflows, deliveries, payrolls, clinicDebts, fixedExpenses ?? []]) {
@@ -60,12 +60,16 @@ export function ProfitView({ sources, loading, loadError, onOpenDelivery, onAddE
         if (debtMonthValue(row.monthYear) !== null) values.add(row.monthYear);
       }
     }
+    for (const payment of debtPayments ?? []) {
+      const collectedMonth = paymentCollectedMonthYear(payment);
+      if (collectedMonth) values.add(collectedMonth);
+    }
     return sortMonthYearsDesc([...values]);
-  }, [currentMonth, orders, cashflows, deliveries, payrolls, clinicDebts, fixedExpenses]);
+  }, [currentMonth, orders, cashflows, deliveries, payrolls, clinicDebts, fixedExpenses, debtPayments]);
   const selectedMonth = months.includes(month) ? month : currentMonth;
   const report = useMemo(
-    () => calculateMonthlyProfit(selectedMonth, { orders, cashflows, deliveries, payrolls, clinicDebts, discountRates, users, commissions, fixedExpenses }),
-    [selectedMonth, orders, cashflows, deliveries, payrolls, clinicDebts, discountRates, users, commissions, fixedExpenses]
+    () => calculateMonthlyProfit(selectedMonth, { orders, cashflows, deliveries, payrolls, clinicDebts, discountRates, users, commissions, fixedExpenses, debtPayments }),
+    [selectedMonth, orders, cashflows, deliveries, payrolls, clinicDebts, discountRates, users, commissions, fixedExpenses, debtPayments]
   );
 
   function exportReport() {
@@ -153,8 +157,22 @@ export function ProfitView({ sources, loading, loadError, onOpenDelivery, onAddE
                     {money(report.profit)}
                   </div>
                 </div>
+                <dl className="mt-3 divide-y divide-slate-200 text-sm dark:divide-slate-700">
+                  <ReportLine label="Tiền đã thu công nợ" value={report.collectedDebtAmount} />
+                </dl>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-900 p-3 text-white">
+                  <div>
+                    <div className="font-bold">Lợi nhuận ròng</div>
+                    <div className="text-xs text-slate-300">
+                      Tiền đã thu công nợ trừ tổng chi phí
+                    </div>
+                  </div>
+                  <div className={`text-xl font-bold ${report.netProfit < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                    {money(report.netProfit)}
+                  </div>
+                </div>
                 <p className={`mt-3 ${muted}`}>
-                  Mặt bằng, điện nước lấy từ bảng chi khi chưa chỉnh sửa. Bấm số tiền để sửa cho tháng này. Lương và giao vận lấy số lớn hơn giữa bảng nghiệp vụ và phiếu chi cùng nhóm để tránh cộng trùng.
+                  Mặt bằng, điện nước lấy từ bảng chi khi chưa chỉnh sửa. Bấm số tiền để sửa cho tháng này. Lương và giao vận lấy số lớn hơn giữa bảng nghiệp vụ và phiếu chi cùng nhóm để tránh cộng trùng. Lợi nhuận ròng = Tiền đã thu công nợ − Tổng chi phí; tiền thu tính theo ngày thu, không theo kỳ công nợ.
                 </p>
               </section>
             </div>

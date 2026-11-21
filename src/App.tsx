@@ -1153,7 +1153,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
             {activeTab === 'profit' && profile.role === 'admin' && (
               <ProfitView
-                sources={{ orders, clinicDebts, discountRates: clinicDiscountRates, cashflows, deliveries, payrolls, commissions, users, fixedExpenses: profitFixedExpenses }}
+                sources={{ orders, clinicDebts, discountRates: clinicDiscountRates, cashflows, deliveries, payrolls, commissions, users, fixedExpenses: profitFixedExpenses, debtPayments }}
                 labProfile={labProfile}
                 loading={payrollsLoading || commissionsLoading || usersLoading || profitCostsLoading}
                 loadError={payrollsError || commissionsError || usersError || profitCostsError}

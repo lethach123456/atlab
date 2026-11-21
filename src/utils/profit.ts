@@ -1,8 +1,8 @@
-import type { CashflowTransaction, ClinicDebtRecord, DeliveryRecord, DentalOrder } from '../types/dental';
+import type { CashflowTransaction, ClinicDebtRecord, DebtPaymentRecord, DeliveryRecord, DentalOrder } from '../types/dental';
 import type { EmployeePayroll } from '../types/payroll';
 import type { SaleCommission } from '../types/commission';
 import type { UserProfile } from '../types/user';
-import { calculateDebtRows, DEBT_START_MONTH, normalizeClinicName } from './debtLedger';
+import { calculateDebtRows, DEBT_START_MONTH, debtMonthValue, normalizeClinicName } from './debtLedger';
 import { buildMonthlyPayroll } from './payrollReport';
 
 export const PAYROLL_EXPENSE_CATEGORY = 'Lương kỹ thuật viên';
@@ -41,6 +41,36 @@ export interface ProfitSources {
   commissions: SaleCommission[];
   users: UserProfile[];
   fixedExpenses?: ProfitFixedExpense[];
+  debtPayments?: DebtPaymentRecord[];
+}
+
+
+const collectedAmount = (value: number) => Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+
+/** Parse DD/MM/YYYY (or D-M-YYYY) into MM/YYYY; invalid or empty dates return null. */
+export function monthYearFromCollectedDate(dateStr: string | null | undefined): string | null {
+  const raw = String(dateStr ?? '').trim();
+  if (!raw) return null;
+  const parts = raw.split(/[/.\-]/).map((part) => part.trim());
+  if (parts.length < 3) return null;
+  const day = Number(parts[0]);
+  const month = Number(parts[1]);
+  const yearToken = parts[2];
+  let year = Number(yearToken);
+  if (yearToken.length === 2 && Number.isInteger(year)) year += 2000;
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2020 || year > 2100) return null;
+  if (day > new Date(year, month, 0).getDate()) return null;
+  return `${String(month).padStart(2, '0')}/${year}`;
+}
+
+/** Month a debt payment counts toward cash collected: payment date, else the payment's kỳ. */
+export function paymentCollectedMonthYear(
+  payment: Pick<DebtPaymentRecord, 'paymentDate' | 'monthYear'>,
+): string | null {
+  const fromDate = monthYearFromCollectedDate(payment.paymentDate);
+  if (fromDate) return fromDate;
+  return debtMonthValue(payment.monthYear) !== null ? payment.monthYear : null;
 }
 
 export function isManualProfitExpense(row: CashflowTransaction): boolean {
@@ -145,8 +175,16 @@ export function calculateMonthlyProfit(month: string, sources: ProfitSources) {
   const deliveryExpense = Math.max(labDelivery, deliveryInCashflow);
   const expenses = payrollExpense + deliveryExpense + operatingExpenses + rentExpense + utilitiesExpense + extraExpense;
   const profit = netRevenue - expenses;
+  const collectedDebtPayments = (sources.debtPayments ?? []).filter(
+    (payment) => paymentCollectedMonthYear(payment) === month,
+  );
+  const collectedDebtAmount = collectedDebtPayments.reduce(
+    (sum, payment) => sum + collectedAmount(payment.amount),
+    0,
+  );
+  const netProfit = collectedDebtAmount - expenses;
   return {
-    grossRevenue, discounts, netRevenue, expenses, profit,
+    grossRevenue, discounts, netRevenue, expenses, profit, collectedDebtAmount, netProfit,
     margin: netRevenue > 0 ? profit / netRevenue : null,
     payrollExpense, savedPayroll, payrollInCashflow, payrollRows,
     deliveryExpense, labDelivery, deliveryInCashflow, assumedLabDelivery, clinicDelivery, deliveryRows,
