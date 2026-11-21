@@ -54,6 +54,49 @@ export function paymentCollectedMonthYear(
   return debtMonthValue(payment.monthYear) !== null ? payment.monthYear : null;
 }
 
+function paymentDateSortValue(dateStr: string | undefined): number {
+  const parts = String(dateStr ?? '').trim().split(/[/.\-]/);
+  if (parts.length < 3) return Number.MAX_SAFE_INTEGER;
+  const day = Number(parts[0]);
+  const month = Number(parts[1]);
+  const year = Number(parts[2]);
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return Number.MAX_SAFE_INTEGER;
+  return year * 10000 + month * 100 + day;
+}
+
+/** debtPayments for a kỳ (or every kỳ from DEBT_START_MONTH), optionally one clinic.
+ * Excludes clinicDebts.paidAmount, cashflow income, and carried credit.
+ */
+export function collectedDebtPaymentsForScope(
+  payments: readonly DebtPaymentRecord[] | undefined,
+  options: { monthYear?: string; clinicName?: string } = {},
+): DebtPaymentRecord[] {
+  const monthYear = options.monthYear || '';
+  const clinicKey = options.clinicName ? normalizeClinicName(options.clinicName) : '';
+  const start = debtMonthValue(DEBT_START_MONTH)!;
+  return (payments ?? []).filter((payment) => {
+    const period = paymentCollectedMonthYear(payment);
+    if (!period) return false;
+    const value = debtMonthValue(period);
+    if (value === null || value < start) return false;
+    if (monthYear && period !== monthYear) return false;
+    if (clinicKey && normalizeClinicName(payment.clinicName) !== clinicKey) return false;
+    return true;
+  }).sort((a, b) =>
+    paymentDateSortValue(a.paymentDate) - paymentDateSortValue(b.paymentDate)
+    || a.clinicName.localeCompare(b.clinicName, 'vi')
+    || a.id.localeCompare(b.id)
+  );
+}
+
+export function collectedDebtAmountForScope(
+  payments: readonly DebtPaymentRecord[] | undefined,
+  options: { monthYear?: string; clinicName?: string } = {},
+): number {
+  return collectedDebtPaymentsForScope(payments, options)
+    .reduce((sum, payment) => sum + collectedAmount(payment.amount), 0);
+}
+
 export function isManualProfitExpense(row: CashflowTransaction): boolean {
   return row.type === 'expense' && row.id.startsWith('cf_profit_') &&
     Object.values(PROFIT_EXPENSE_CATEGORIES).some((category) => category === row.category);
@@ -156,16 +199,14 @@ export function calculateMonthlyProfit(month: string, sources: ProfitSources) {
   const deliveryExpense = Math.max(labDelivery, deliveryInCashflow);
   const expenses = payrollExpense + deliveryExpense + operatingExpenses + rentExpense + utilitiesExpense + extraExpense;
   const profit = netRevenue - expenses;
-  const collectedDebtPayments = (sources.debtPayments ?? []).filter(
-    (payment) => paymentCollectedMonthYear(payment) === month,
-  );
+  const collectedDebtPayments = collectedDebtPaymentsForScope(sources.debtPayments, { monthYear: month });
   const collectedDebtAmount = collectedDebtPayments.reduce(
     (sum, payment) => sum + collectedAmount(payment.amount),
     0,
   );
   const netProfit = collectedDebtAmount - expenses;
   return {
-    grossRevenue, discounts, netRevenue, expenses, profit, collectedDebtAmount, netProfit,
+    grossRevenue, discounts, netRevenue, expenses, profit, collectedDebtAmount, netProfit, collectedDebtPayments,
     margin: netRevenue > 0 ? profit / netRevenue : null,
     payrollExpense, savedPayroll, payrollInCashflow, payrollRows,
     deliveryExpense, labDelivery, deliveryInCashflow, assumedLabDelivery, clinicDelivery, deliveryRows,

@@ -108,7 +108,27 @@ export function buildProfitPdfSections(report: MonthlyProfitReport): ProfitPdfSe
       ],
     },
     {
-      title: '2. BẢNG LƯƠNG TỔNG HỢP',
+      title: '2. DANH SÁCH CÔNG NỢ ĐÃ THU',
+      notes: [
+        `Tổng đã thu công nợ ${amount(report.collectedDebtAmount)} bằng tổng từng phiếu thu thuộc kỳ công nợ này, kể cả khi ngày thu ở tháng sau.`,
+        'Không cộng phiếu quỹ Thu công nợ nha khoa và không cộng số đã thanh toán nhập tay trên sổ công nợ.',
+      ],
+      tables: [{
+        columns: [
+          { label: 'STT', width: 36, align: 'center' }, { label: 'Ngày thu', width: 95 },
+          { label: 'Nha khoa', width: 260 }, { label: 'Kỳ công nợ', width: 100, align: 'center' },
+          { label: 'Số tiền (đ)', width: 160, align: 'right' }, { label: 'Hình thức', width: 120 },
+          { label: 'Ghi chú', width: 276 },
+        ],
+        rows: report.collectedDebtPayments.map((row, index) => ({ cells: [
+          String(index + 1), present(row.paymentDate), present(row.clinicName), present(row.monthYear),
+          amount(row.amount), cashMethod(row.method), present(row.notes),
+        ] })),
+        total: { label: 'Tổng đã thu công nợ', value: amount(report.collectedDebtAmount) },
+      }],
+    },
+    {
+      title: '3. BẢNG LƯƠNG TỔNG HỢP',
       notes: [
         `Tổng thực lĩnh ${amount(report.savedPayroll)}. Phiếu chi lương ${amount(report.payrollInCashflow)}. Chi phí lương tính vào lợi nhuận ${amount(report.payrollExpense)}.`,
         'Lương dùng cùng công thức với mục Bảng lương, bao gồm hoa hồng sale và nhân sự tự thêm trong kỳ.',
@@ -132,7 +152,7 @@ export function buildProfitPdfSections(report: MonthlyProfitReport): ProfitPdfSe
       }],
     },
     {
-      title: '3. BẢNG CHI',
+      title: '4. BẢNG CHI',
       notes: [
         `Tổng phiếu chi ${amount(sum(report.expenseRows.map((row) => row.amount)))}. Phần đưa vào dòng Tổng chi từ bảng chi ${amount(report.operatingExpenses)}.`,
         'Lương, giao vận, mặt bằng, điện nước và chi phí nhập thêm được tính ở các dòng riêng trong bảng lợi nhuận.',
@@ -152,7 +172,7 @@ export function buildProfitPdfSections(report: MonthlyProfitReport): ProfitPdfSe
       }],
     },
     {
-      title: '4. BẢNG CHIẾT KHẤU',
+      title: '5. BẢNG CHIẾT KHẤU',
       notes: ['Chiết khấu theo từng nha khoa trong kỳ, gồm số đã chốt ở bảng công nợ và tỷ lệ áp dụng cho doanh số.'],
       tables: [{
         columns: [
@@ -168,7 +188,7 @@ export function buildProfitPdfSections(report: MonthlyProfitReport): ProfitPdfSe
       }],
     },
     {
-      title: '5. DOANH SỐ THEO NHA KHOA',
+      title: '6. DOANH SỐ THEO NHA KHOA',
       notes: [
         `Doanh số ${amount(report.grossRevenue)} - Chiết khấu ${amount(report.discounts)} = Doanh thu sau chiết khấu ${amount(report.netRevenue)}.`,
         'Số ca và số răng theo đơn hàng trong kỳ. Doanh số kỳ gốc sử dụng số đã chốt nếu có bảng công nợ gốc.',
@@ -188,7 +208,7 @@ export function buildProfitPdfSections(report: MonthlyProfitReport): ProfitPdfSe
       }],
     },
     {
-      title: '6. BẢNG GIAO VẬN',
+      title: '7. BẢNG GIAO VẬN',
       notes: [
         `Labo trả ${amount(report.labDelivery)} (gồm ${amount(report.assumedLabDelivery)} chưa ghi bên trả). Nha khoa trả ${amount(report.clinicDelivery)}. Tổng toàn bộ giao vận ${amount(report.labDelivery + report.clinicDelivery)}.`,
         `Phiếu chi giao vận ${amount(report.deliveryInCashflow)}. Chi phí giao vận tính vào lợi nhuận ${amount(report.deliveryExpense)}. Bên trả để trống được tính cho labo.`,
@@ -387,7 +407,7 @@ export async function createProfitReportPdf(options: ExportProfitReportPdfOption
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
   pdf.setProperties({
     title: `Báo cáo lợi nhuận tháng ${options.monthYear}`,
-    subject: 'Lợi nhuận, lương, chi, chiết khấu, doanh số nha khoa và giao vận',
+    subject: 'Lợi nhuận, công nợ đã thu, lương, chi, chiết khấu, doanh số nha khoa và giao vận',
     author: options.labProfile.labName || DEFAULT_LAB_PROFILE.labName,
   });
   for (let index = 0; index < pages.length; index++) {

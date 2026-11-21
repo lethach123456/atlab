@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CashflowTransaction, ClinicDebtRecord, DebtPaymentRecord } from '../types/dental';
-import { calculateMonthlyProfit, PROFIT_EXPENSE_CATEGORIES, paymentCollectedMonthYear, type ProfitSources } from './profit';
+import { calculateMonthlyProfit, PROFIT_EXPENSE_CATEGORIES, collectedDebtAmountForScope, collectedDebtPaymentsForScope, paymentCollectedMonthYear, type ProfitSources } from './profit';
 
 const month = '11/2026';
 function expense(id: string, category: string, amount: number, monthYear = month): CashflowTransaction {
@@ -11,8 +11,8 @@ function sources(cashflows: CashflowTransaction[], debtPayments: DebtPaymentReco
   return { orders: [], clinicDebts, discountRates: new Map(), cashflows, deliveries: [], payrolls: [], commissions: [], users: [], debtPayments };
 }
 
-function payment(id: string, monthYear: string, amount: number, paymentDate: string): DebtPaymentRecord {
-  return { id, clinicName: 'Lăng Cô', amount, paymentDate, monthYear, method: 'transfer', createdAt: 1 };
+function payment(id: string, monthYear: string, amount: number, paymentDate: string, clinicName = 'Lăng Cô'): DebtPaymentRecord {
+  return { id, clinicName, amount, paymentDate, monthYear, method: 'transfer', createdAt: 1 };
 }
 
 test('monthly fixed cost edits replace their ledger totals once and preserve the cashflow detail', () => {
@@ -151,4 +151,35 @@ test('collections follow the payment kỳ even when the payment date is missing 
   ]);
   assert.equal(calculateMonthlyProfit('10/2026', input).collectedDebtAmount, 2_000_000);
   assert.equal(calculateMonthlyProfit('11/2026', input).collectedDebtAmount, 0);
+});
+
+test('collectedDebtAmountForScope uses the debt period, can scope to one clinic, and ignores later-month kỳ', () => {
+  const payments = [
+    payment('oct-langco', '10/2026', 3_000_000, '05/11/2026'),
+    payment('oct-top', '10/2026', 2_000_000, '08/11/2026', 'Top Dental'),
+    payment('nov-langco', '11/2026', 9_000_000, '01/11/2026'),
+    payment('aug-too-early', '08/2026', 4_000_000, '01/08/2026'),
+  ];
+  assert.equal(collectedDebtAmountForScope(payments, { monthYear: '10/2026' }), 5_000_000);
+  assert.equal(collectedDebtAmountForScope(payments, { monthYear: '10/2026', clinicName: 'Nha khoa Lăng Cô' }), 3_000_000);
+  assert.equal(collectedDebtAmountForScope(payments, { monthYear: '11/2026' }), 9_000_000);
+  assert.equal(collectedDebtAmountForScope(payments, { clinicName: 'Lăng Cô' }), 12_000_000);
+});
+
+test('collected payment list follows the debt period and totals the same collected amount', () => {
+  const payments = [
+    payment('later-date', '10/2026', 2_000_000, '20/11/2026'),
+    payment('earlier-date', '10/2026', 3_000_000, '05/11/2026'),
+    payment('november-ky', '11/2026', 9_000_000, '01/11/2026'),
+  ];
+  const october = collectedDebtPaymentsForScope(payments, { monthYear: '10/2026' });
+  assert.deepEqual(october.map((row) => row.id), ['earlier-date', 'later-date']);
+  assert.equal(
+    october.reduce((sum, row) => sum + row.amount, 0),
+    collectedDebtAmountForScope(payments, { monthYear: '10/2026' }),
+  );
+  const report = calculateMonthlyProfit('10/2026', sources([], payments));
+  assert.equal(report.collectedDebtPayments.length, 2);
+  assert.equal(report.collectedDebtAmount, 5_000_000);
+  assert.equal(calculateMonthlyProfit('11/2026', sources([], payments)).collectedDebtPayments.length, 1);
 });
