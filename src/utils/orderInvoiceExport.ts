@@ -9,23 +9,30 @@ export interface OrderInvoiceExportScope {
 
 /**
  * Scope for Orders → HĐ PDF:
- * - selected rows if any selection, else currently filtered rows
+ * - selected rows if any selection, else currently visible (filtered + sorted) rows
+ * - selection follows the on-screen order; selected rows hidden by the current filter are appended after
  * - single clinic → that recipient; multiple → "" (tổng hợp, existing invoice behavior)
  * - month from the list filter ("" when ALL)
  */
 export function resolveOrderInvoiceExportScope(input: {
   allOrders: DentalOrder[];
-  filteredOrders: DentalOrder[];
+  visibleOrders: DentalOrder[];
   selectedIds: Iterable<string>;
   selectedMonth: string;
 }): OrderInvoiceExportScope {
   const selected = new Set(
     [...input.selectedIds].map((id) => String(id || '').trim()).filter(Boolean)
   );
+  const visible = input.visibleOrders;
   const orders =
     selected.size > 0
-      ? input.allOrders.filter((order) => selected.has(order.id))
-      : [...input.filteredOrders];
+      ? [
+          ...visible.filter((order) => selected.has(order.id)),
+          ...input.allOrders.filter(
+            (order) => selected.has(order.id) && !visible.some((row) => row.id === order.id)
+          ),
+        ]
+      : [...visible];
 
   const clinicKeys = new Map<string, string>();
   for (const order of orders) {

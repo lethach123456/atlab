@@ -34,7 +34,7 @@ test('uses selection when present, else filtered list', () => {
   const filtered = [all[0], all[1]];
   const selected = resolveOrderInvoiceExportScope({
     allOrders: all,
-    filteredOrders: filtered,
+    visibleOrders: filtered,
     selectedIds: ['a'],
     selectedMonth: '11/2026',
   });
@@ -44,7 +44,7 @@ test('uses selection when present, else filtered list', () => {
 
   const filteredOnly = resolveOrderInvoiceExportScope({
     allOrders: all,
-    filteredOrders: filtered,
+    visibleOrders: filtered,
     selectedIds: [],
     selectedMonth: '11/2026',
   });
@@ -56,7 +56,7 @@ test('single clinic across selection sets recipient; multi uses tổng hợp', (
   const all = [order('a', 'Lăng Cô'), order('b', 'Lăng Cô'), order('c', 'Tâm An')];
   const oneClinic = resolveOrderInvoiceExportScope({
     allOrders: all,
-    filteredOrders: all,
+    visibleOrders: all,
     selectedIds: ['a', 'b'],
     selectedMonth: 'ALL',
   });
@@ -65,7 +65,7 @@ test('single clinic across selection sets recipient; multi uses tổng hợp', (
 
   const multi = resolveOrderInvoiceExportScope({
     allOrders: all,
-    filteredOrders: all,
+    visibleOrders: all,
     selectedIds: ['a', 'c'],
     selectedMonth: '11/2026',
   });
@@ -76,7 +76,7 @@ test('single clinic across selection sets recipient; multi uses tổng hợp', (
 test('empty selection and empty filter yields empty safe scope', () => {
   const scope = resolveOrderInvoiceExportScope({
     allOrders: [order('a', 'Lăng Cô')],
-    filteredOrders: [],
+    visibleOrders: [],
     selectedIds: [],
     selectedMonth: '11/2026',
   });
@@ -89,10 +89,43 @@ test('treats accent/spacing clinic variants as one recipient', () => {
   const all = [order('a', 'Lăng Cô'), order('b', '  LĂNG   CÔ  ')];
   const scope = resolveOrderInvoiceExportScope({
     allOrders: all,
-    filteredOrders: all,
+    visibleOrders: all,
     selectedIds: ['a', 'b'],
     selectedMonth: '10/2026',
   });
   assert.equal(scope.orders.length, 2);
   assert.ok(scope.clinicName.length > 0);
+});
+
+test('selection follows the visible on-screen order, not allOrders order', () => {
+  const all = [order('a', 'Lăng Cô'), order('b', 'Tâm An'), order('c', 'Lăng Cô')];
+  const visible = [all[2], all[0], all[1]];
+  const scope = resolveOrderInvoiceExportScope({
+    allOrders: all,
+    visibleOrders: visible,
+    selectedIds: ['a', 'c'],
+    selectedMonth: '11/2026',
+  });
+  assert.deepEqual(scope.orders.map((o) => o.id), ['c', 'a']);
+  assert.equal(scope.clinicName, 'Lăng Cô');
+});
+
+test('default/unfiltered export keeps visible order, and off-filter selected rows append after', () => {
+  const all = [order('a', 'Lăng Cô'), order('b', 'Tâm An'), order('c', 'Lăng Cô')];
+  const visible = [all[2], all[1]];
+  const noSelection = resolveOrderInvoiceExportScope({
+    allOrders: all,
+    visibleOrders: visible,
+    selectedIds: [],
+    selectedMonth: '11/2026',
+  });
+  assert.deepEqual(noSelection.orders.map((o) => o.id), ['c', 'b']);
+
+  const withHidden = resolveOrderInvoiceExportScope({
+    allOrders: all,
+    visibleOrders: visible,
+    selectedIds: ['b', 'a'],
+    selectedMonth: '11/2026',
+  });
+  assert.deepEqual(withHidden.orders.map((o) => o.id), ['b', 'a']);
 });

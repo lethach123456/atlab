@@ -38,6 +38,7 @@ import {
   materialConfigsFromClinicRows,
 } from './utils/financeUtils';
 import { calculateDebtRows, normalizeClinicName, DEBT_START_MONTH, debtMonthValue } from './utils/debtLedger';
+import { sortDentalOrders } from './utils/orderSort';
 import { buildClinicPartnerIndex, createClinicNameResolver, getClinicOptions, prepareClinicPartnerChange } from './utils/clinicPartners';
 import { Header, NavTab } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -940,8 +941,12 @@ function Workspace({ profile }: { profile: UserProfile }) {
   const handleOpenInvoicePdf = (
     targetOrders: DentalOrder[],
     clinicName: string,
-    monthYear: string
+    monthYear: string,
+    options?: { preserveVisibleOrder?: boolean }
   ) => {
+    const invoiceOrders = options?.preserveVisibleOrder
+      ? [...targetOrders]
+      : sortDentalOrders(targetOrders);
     const effectiveMonth = monthYear && monthYear !== 'ALL' ? monthYear : '';
     const matchClinic = (name: string) =>
       !clinicName || normalizeClinicName(name) === normalizeClinicName(clinicName);
@@ -1003,7 +1008,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
 
     setInvoiceModalData({
       isOpen: true,
-      orders: targetOrders,
+      orders: invoiceOrders,
       clinicName,
       monthYear: effectiveMonth,
       paidAmount,
@@ -1105,7 +1110,7 @@ function Workspace({ profile }: { profile: UserProfile }) {
                 onNewOrder={() => handleOpenNewOrder()}
                 onQuickAdd={handleQuickAddOrder}
                 onExportInvoicePdf={(ords, clinic, month) =>
-                  handleOpenInvoicePdf(ords, clinic, month)
+                  handleOpenInvoicePdf(ords, clinic, month, { preserveVisibleOrder: true })
                 }
               />
             )}

@@ -7,6 +7,7 @@ import { formatSaveError } from '../utils/reliableSave';
 import { useNotify } from './AppNotifications';
 import { getClinicOptions } from '../utils/clinicPartners';
 import { resolveOrderInvoiceExportScope } from '../utils/orderInvoiceExport';
+import { sortDentalOrders, type OrderSortField } from '../utils/orderSort';
 import {
   formatVND,
   sortMonthYearsDesc,
@@ -39,7 +40,7 @@ import {
   MoreVertical,
 } from 'lucide-react';
 
-type SortField = 'id' | 'createdAt' | 'orderDate' | 'warrantyCode' | 'patientName' | 'clinicName' | 'teethCount' | 'totalAmount';
+type SortField = OrderSortField;
 type EditableField = Exclude<SortField, 'id' | 'createdAt'> | 'teeth' | 'phone' | 'warrantyPeriod' | 'material' | 'notes';
 
 const orderColumns: { field: QuickOrderField; label: string; sort?: SortField; widthPct: number }[] = [
@@ -197,36 +198,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
     if (sortField === 'default') {
       return filteredOrders;
     }
-    return [...filteredOrders].sort((a, b) => {
-      let comp = 0;
-      if (sortField === 'createdAt') {
-        comp = (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
-      } else if (sortField === 'id') {
-        comp = a.id.localeCompare(b.id, 'en', { numeric: true });
-      } else if (sortField === 'orderDate') {
-        const toVal = (dStr: string) => {
-          const parts = (dStr || '').split(/[\/-]/);
-          if (parts.length >= 3) {
-            return (
-              parseInt(parts[2], 10) * 10000 +
-              parseInt(parts[1], 10) * 100 +
-              parseInt(parts[0], 10)
-            );
-          }
-          return 0;
-        };
-        comp = toVal(a.orderDate) - toVal(b.orderDate);
-      } else if (sortField === 'teethCount') {
-        comp = (a.teethCount ?? 0) - (b.teethCount ?? 0);
-      } else if (sortField === 'totalAmount') {
-        comp = (a.totalAmount || 0) - (b.totalAmount || 0);
-      } else {
-        const valA = (a[sortField] || '').toLowerCase();
-        const valB = (b[sortField] || '').toLowerCase();
-        comp = valA.localeCompare(valB, 'vi');
-      }
-      return sortOrder === 'asc' ? comp : -comp;
-    });
+    return sortDentalOrders(filteredOrders, sortField, sortOrder);
   }, [filteredOrders, sortField, sortOrder]);
 
   const totalItems = sortedOrders.length;
@@ -274,7 +246,7 @@ export const OrderListView: React.FC<OrderListViewProps> = ({
   const handleExportInvoicePdf = () => {
     const scope = resolveOrderInvoiceExportScope({
       allOrders: orders,
-      filteredOrders,
+      visibleOrders: sortedOrders,
       selectedIds,
       selectedMonth,
     });
