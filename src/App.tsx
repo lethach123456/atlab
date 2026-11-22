@@ -62,6 +62,8 @@ import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import type { UserProfile } from './types/user';
 import { AuthGate } from './components/AuthGate';
+import { DemoDashboardPage } from './components/DemoDashboardPage';
+import { isDemoDashboardLocation } from './utils/demoDashboardRoute';
 import type { SaleCommission } from './types/commission';
 import {
   saveCommission,
@@ -1021,6 +1023,41 @@ function Workspace({ profile }: { profile: UserProfile }) {
       previousMonthLabel: effectiveMonth ? getPreviousMonthYear(effectiveMonth) : '',
     });
   };
+
+  if (isDemoDashboardLocation()) {
+    return (
+      <div className="min-h-screen text-slate-900 dark:text-slate-100 transition-colors">
+        {loading ? (
+          <div className="grid min-h-screen place-items-center">
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 className="w-7 h-7 animate-spin text-blue-600" />
+              <p className="text-xs font-medium text-slate-500">Đang tải dữ liệu...</p>
+            </div>
+          </div>
+        ) : (
+          <DemoDashboardPage
+            sources={{
+              orders,
+              clinicDebts,
+              discountRates: clinicDiscountRates,
+              cashflows,
+              deliveries,
+              payrolls,
+              commissions,
+              users,
+              fixedExpenses: profitFixedExpenses,
+              debtPayments,
+            }}
+            isAdmin={profile.role === 'admin'}
+            isDark={isDark}
+            userName={profile.displayName || profile.email}
+            onToggleTheme={() => setIsDark(!isDark)}
+            onSignOut={() => { void signOut(auth); }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100 transition-colors">

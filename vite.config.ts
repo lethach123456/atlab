@@ -1,11 +1,26 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'emit-demo-dashboard',
+        closeBundle() {
+          const dist = path.resolve(__dirname, 'dist');
+          const index = path.join(dist, 'index.html');
+          const destDir = path.join(dist, 'demo-dashboard');
+          if (!fs.existsSync(index)) return;
+          fs.mkdirSync(destDir, { recursive: true });
+          fs.copyFileSync(index, path.join(destDir, 'index.html'));
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
